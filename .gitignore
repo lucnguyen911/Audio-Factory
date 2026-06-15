@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+output/
+samples/private/
+models/
+dist/
+build/
+*.spec
+*.log
+.env
