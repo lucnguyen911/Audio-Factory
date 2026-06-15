@@ -41,28 +41,40 @@ def validate_preset(preset: str) -> str:
 def build_volume_filter_chain(options: VolumeLevelingOptions) -> str:
     """
     Build the FFmpeg audio filter chain based on preset and leveling settings.
-    Combines compand (compressor), loudnorm (loudness normalization), and alimiter.
+    Combines dynaudnorm (Dynamic Audio Normalizer), loudnorm (loudness normalization), and alimiter.
     """
     preset = validate_preset(options.preset)
     
-    # 1. Setup dynamic range compression (compand) per preset
+    # 1. Setup dynamic range normalization (dynaudnorm) per preset
     if preset == "natural":
         # Gentle dynamic leveling keeping original characteristics
-        compand_filter = "compand=attacks=0.3|0.3:decays=0.8|0.8:points=-70|-60|-25|-20|0|-5:soft-knee=2.0:gain=-2"
+        dynaudnorm_filter = "dynaudnorm=f=250:g=7:p=0.95:m=5"
+        lufs = options.target_lufs
+        tp = options.true_peak
+        lra = options.loudness_range
+        lim = 0.89
     elif preset == "strong":
         # Moderate leveling suitable for regular content podcasts
-        compand_filter = "compand=attacks=0.2|0.2:decays=0.6|0.6:points=-70|-50|-20|-12|0|-2:soft-knee=2.0:gain=-1"
+        dynaudnorm_filter = "dynaudnorm=f=200:g=11:p=0.95:m=8"
+        lufs = options.target_lufs
+        tp = options.true_peak
+        lra = options.loudness_range if options.loudness_range != 11.0 else 9.0
+        lim = 0.89
     else:  # aggressive
-        # Fast compression suited for short form / MMO content
-        compand_filter = "compand=attacks=0.1|0.1:decays=0.4|0.4:points=-70|-40|-20|-8|0|0:soft-knee=2.0:gain=0"
+        # Fast dynamic leveling suited for short form / MMO content
+        dynaudnorm_filter = "dynaudnorm=f=150:g=15:p=0.95:m=10"
+        lufs = options.target_lufs if options.target_lufs != -16.0 else -14.0
+        tp = options.true_peak if options.true_peak != -1.5 else -1.2
+        lra = options.loudness_range if options.loudness_range != 11.0 else 7.0
+        lim = 0.87
 
     # 2. Loudness normalization (loudnorm)
-    loudnorm_filter = f"loudnorm=i={options.target_lufs}:tp={options.true_peak}:lra={options.loudness_range}"
+    loudnorm_filter = f"loudnorm=i={lufs}:tp={tp}:lra={lra}"
 
-    # 3. Limiter to guarantee zero digital clipping (limiter set at -1.0dB amplitude (~0.89))
-    limiter_filter = "alimiter=limit=0.89"
+    # 3. Limiter to guarantee zero digital clipping
+    limiter_filter = f"alimiter=limit={lim}"
 
-    return f"{compand_filter},{loudnorm_filter},{limiter_filter}"
+    return f"{dynaudnorm_filter},{loudnorm_filter},{limiter_filter}"
 
 
 def level_volume(

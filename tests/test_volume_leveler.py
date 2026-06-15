@@ -11,6 +11,7 @@ from core.volume_leveler import (
     level_volume_batch
 )
 
+
 class TestVolumeLeveler(unittest.TestCase):
 
     def test_validate_preset(self):
@@ -26,15 +27,29 @@ class TestVolumeLeveler(unittest.TestCase):
         
         chain_nat = build_volume_filter_chain(opts)
         self.assertGreater(len(chain_nat), 0)
-        self.assertIn("compand", chain_nat)
+        self.assertNotIn("compand", chain_nat)
+        self.assertIn("dynaudnorm", chain_nat)
         self.assertIn("loudnorm", chain_nat)
         self.assertIn("alimiter", chain_nat)
         
+        # Verify specific parameters for presets
+        self.assertIn("dynaudnorm=f=250:g=7:p=0.95:m=5", chain_nat)
+        self.assertIn("loudnorm=i=-16.0:tp=-1.5:lra=11.0", chain_nat)
+        self.assertIn("alimiter=limit=0.89", chain_nat)
+        
         opts_strong = VolumeLevelingOptions(preset="strong")
         chain_strong = build_volume_filter_chain(opts_strong)
+        self.assertNotIn("compand", chain_strong)
+        self.assertIn("dynaudnorm=f=200:g=11:p=0.95:m=8", chain_strong)
+        self.assertIn("loudnorm=i=-16.0:tp=-1.5:lra=9.0", chain_strong)
+        self.assertIn("alimiter=limit=0.89", chain_strong)
         
         opts_agg = VolumeLevelingOptions(preset="aggressive")
         chain_agg = build_volume_filter_chain(opts_agg)
+        self.assertNotIn("compand", chain_agg)
+        self.assertIn("dynaudnorm=f=150:g=15:p=0.95:m=10", chain_agg)
+        self.assertIn("loudnorm=i=-14.0:tp=-1.2:lra=7.0", chain_agg)
+        self.assertIn("alimiter=limit=0.87", chain_agg)
         
         self.assertNotEqual(chain_nat, chain_strong)
         self.assertNotEqual(chain_strong, chain_agg)
@@ -75,7 +90,8 @@ class TestVolumeLeveler(unittest.TestCase):
         self.assertEqual(call_args[1], "-i")
         self.assertEqual(call_args[2], "input.wav")
         self.assertEqual(call_args[3], "-af")
-        self.assertIn("compand", call_args[4])
+        self.assertNotIn("compand", call_args[4])
+        self.assertIn("dynaudnorm", call_args[4])
         self.assertIn("-ar", call_args)
         self.assertEqual(call_args[call_args.index("-ar") + 1], "44100")
         self.assertIn("-ac", call_args)
@@ -95,3 +111,43 @@ class TestVolumeLeveler(unittest.TestCase):
         
         self.assertEqual(res[0], out_dir / "audio1_leveled.mp3")
         self.assertEqual(res[1], out_dir / "audio2_leveled.wav")
+
+    def test_level_volume_smoke(self):
+        from core.ffmpeg_runner import check_ffmpeg_available, run_ffmpeg
+        if not check_ffmpeg_available():
+            self.skipTest("FFmpeg is not available in system PATH or local bin/ folder.")
+            
+        project_root = Path(__file__).resolve().parent.parent
+        temp_dir = project_root / "temp_test_volume"
+        temp_dir.mkdir(exist_ok=True)
+        
+        temp_input = temp_dir / "temp_input.wav"
+        temp_output = temp_dir / "temp_output.wav"
+        
+        try:
+            # Generate a 1-second silent mono wav audio
+            run_ffmpeg([
+                "-y",
+                "-f", "lavfi",
+                "-i", "anullsrc=r=16000:cl=mono",
+                "-t", "1",
+                str(temp_input)
+            ])
+            self.assertTrue(temp_input.exists(), "Failed to generate temporary input file for smoke test.")
+            
+            # Execute real volume leveling
+            opts = VolumeLevelingOptions(preset="natural", overwrite=True)
+            res = level_volume(temp_input, temp_output, opts)
+            
+            self.assertEqual(res, temp_output)
+            self.assertTrue(temp_output.exists(), "Output file was not created by level_volume.")
+            self.assertGreater(temp_output.stat().st_size, 0, "Output file is empty.")
+            
+        finally:
+            # Clean up files manually
+            if temp_input.exists():
+                temp_input.unlink()
+            if temp_output.exists():
+                temp_output.unlink()
+            if temp_dir.exists():
+                temp_dir.rmdir()
