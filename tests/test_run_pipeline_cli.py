@@ -30,6 +30,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         self.assertEqual(args.volume_preset, "natural")
         self.assertEqual(args.silence_preset, "natural")
         self.assertEqual(args.transcription_preset, "balanced")
+        self.assertIsNone(args.language)
         self.assertEqual(args.output_format, "wav")
         self.assertFalse(args.no_overwrite)
         self.assertFalse(args.batch)
@@ -49,7 +50,8 @@ class TestRunPipelineCLI(unittest.TestCase):
             "--merge-gap", "2.5",
             "--volume-preset", "strong",
             "--silence-preset", "fast",
-            "--transcription-preset", "accurate",
+            "--transcription-preset", "best",
+            "--language", "vi",
             "--output-format", "mp3",
             "--no-overwrite",
             "--batch"
@@ -68,7 +70,8 @@ class TestRunPipelineCLI(unittest.TestCase):
         self.assertEqual(args.merge_gap, 2.5)
         self.assertEqual(args.volume_preset, "strong")
         self.assertEqual(args.silence_preset, "fast")
-        self.assertEqual(args.transcription_preset, "accurate")
+        self.assertEqual(args.transcription_preset, "best")
+        self.assertEqual(args.language, "vi")
         self.assertEqual(args.output_format, "mp3")
         self.assertTrue(args.no_overwrite)
         self.assertTrue(args.batch)
@@ -93,6 +96,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         mock_args.volume_preset = "aggressive"
         mock_args.silence_preset = "hard"
         mock_args.transcription_preset = "fast"
+        mock_args.language = "vi"
         mock_args.output_format = "wav"
         mock_args.no_overwrite = False
         mock_args.batch = False
@@ -131,6 +135,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         self.assertEqual(opts.volume_preset, "aggressive")
         self.assertEqual(opts.silence_preset, "hard")
         self.assertEqual(opts.transcription_preset, "fast")
+        self.assertEqual(opts.language, "vi")
         self.assertTrue(opts.overwrite)
         
         # Check success exit
@@ -156,6 +161,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         mock_args.volume_preset = "natural"
         mock_args.silence_preset = "natural"
         mock_args.transcription_preset = "balanced"
+        mock_args.language = None
         mock_args.output_format = "wav"
         mock_args.no_overwrite = True
         mock_args.batch = True
@@ -188,6 +194,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         
         opts: PipelineOptions = called_args[2]
         self.assertFalse(opts.overwrite)
+        self.assertIsNone(opts.language)
         
         mock_exit.assert_called_once_with(0)
 

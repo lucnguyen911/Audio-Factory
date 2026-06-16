@@ -35,6 +35,7 @@ class PipelineOptions:
     silence_preset: str = "natural"
     transcription_preset: str = "balanced"
     subtitle_base_name: str = "subtitles"
+    language: Optional[str] = None
 
 
 @dataclass
@@ -157,7 +158,7 @@ def run_audio_pipeline(
     if options.enable_transcription:
         try:
             model_size = model_size_from_preset(options.transcription_preset)
-            trans_opts = TranscriptionOptions(model_size=model_size)
+            trans_opts = TranscriptionOptions(model_size=model_size, language=options.language)
             segments = transcribe_media(current_audio, trans_opts)
         except TranscriptionError as e:
             raise PipelineError(f"Failed in transcription step: {e}") from e
@@ -187,7 +188,8 @@ def run_audio_pipeline(
         "merge_gap_seconds": options.merge_gap_seconds,
         "volume_preset": options.volume_preset,
         "silence_preset": options.silence_preset,
-        "transcription_preset": options.transcription_preset
+        "transcription_preset": options.transcription_preset,
+        "language": options.language
     }
     
     subtitles_dict_str = {k: Path(v).as_posix() for k, v in sub_files.items()} if sub_files else None
@@ -252,6 +254,7 @@ def run_batch_pipeline(
             volume_preset=options.volume_preset,
             silence_preset=options.silence_preset,
             transcription_preset=options.transcription_preset,
+            language=options.language,
             subtitle_base_name=options.subtitle_base_name
         )
         

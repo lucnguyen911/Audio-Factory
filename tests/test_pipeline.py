@@ -123,12 +123,16 @@ class TestPipeline(unittest.TestCase):
             enable_volume_leveling=False,
             enable_silence_shortening=False,
             enable_transcription=True,
-            enable_subtitle_export=True
+            enable_subtitle_export=True,
+            language="vi"
         )
         
         res = run_audio_pipeline([Path("input.wav")], out_dir, opts)
         self.assertEqual(res.subtitle_files["srt"], "out/subtitles/subtitles.srt")
         mock_transcribe.assert_called_once()
+        called_args = mock_transcribe.call_args[0]
+        self.assertEqual(called_args[0], Path("input.wav"))
+        self.assertEqual(called_args[1].language, "vi")
         mock_export_subs.assert_called_once()
 
     @patch("core.pipeline.validate_pipeline_inputs")

@@ -23,9 +23,10 @@ class TranscriptionOptions:
 
 
 PRESETS: Dict[str, str] = {
-    "fast": "tiny",
-    "balanced": "base",
-    "accurate": "small"
+    "fast": "base",
+    "balanced": "small",
+    "accurate": "medium",
+    "best": "large-v3"
 }
 
 

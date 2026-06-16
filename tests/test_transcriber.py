@@ -15,9 +15,10 @@ from core.transcriber import (
 class TestTranscriber(unittest.TestCase):
 
     def test_model_size_from_preset(self):
-        self.assertEqual(model_size_from_preset("fast"), "tiny")
-        self.assertEqual(model_size_from_preset("balanced"), "base")
-        self.assertEqual(model_size_from_preset("accurate"), "small")
+        self.assertEqual(model_size_from_preset("fast"), "base")
+        self.assertEqual(model_size_from_preset("balanced"), "small")
+        self.assertEqual(model_size_from_preset("accurate"), "medium")
+        self.assertEqual(model_size_from_preset("best"), "large-v3")
         
         with self.assertRaises(TranscriptionError):
             model_size_from_preset("invalid_preset")
@@ -84,6 +85,25 @@ class TestTranscriber(unittest.TestCase):
         mock_model.transcribe.assert_called_once_with(
             "input.wav",
             language=None,
+            beam_size=5,
+            vad_filter=True,
+            word_timestamps=False
+        )
+
+    @patch("core.transcriber.load_whisper_model")
+    @patch("core.transcriber.validate_input_file")
+    def test_transcribe_media_with_language(self, mock_validate, mock_load):
+        mock_validate.return_value = Path("input.wav")
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = ([], None)
+        mock_load.return_value = mock_model
+        
+        opts = TranscriptionOptions(language="vi")
+        transcribe_media(Path("input.wav"), opts)
+        
+        mock_model.transcribe.assert_called_once_with(
+            "input.wav",
+            language="vi",
             beam_size=5,
             vad_filter=True,
             word_timestamps=False

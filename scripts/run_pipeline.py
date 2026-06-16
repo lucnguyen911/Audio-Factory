@@ -100,9 +100,14 @@ def parse_arguments(args_list=None):
     )
     parser.add_argument(
         "--transcription-preset",
-        choices=["fast", "balanced", "accurate"],
+        choices=["fast", "balanced", "accurate", "best"],
         default="balanced",
         help="Speech-to-text transcription model preset."
+    )
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="Language code for transcription (e.g. 'vi', 'en'). None for auto-detect."
     )
     parser.add_argument(
         "--output-format",
@@ -167,6 +172,7 @@ def main():
         volume_preset=args.volume_preset,
         silence_preset=args.silence_preset,
         transcription_preset=args.transcription_preset,
+        language=args.language,
         subtitle_base_name="subtitles"
     )
     
