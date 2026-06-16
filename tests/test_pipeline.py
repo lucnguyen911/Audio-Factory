@@ -35,8 +35,9 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(res["processed"], out / "processed")
         self.assertEqual(res["subtitles"], out / "subtitles")
         self.assertEqual(res["chunks"], out / "chunks")
+        self.assertEqual(res["shortened"], out / "shortened")
         self.assertEqual(res["metadata"], out / "metadata")
-        self.assertEqual(mock_mkdir.call_count, 5)
+        self.assertEqual(mock_mkdir.call_count, 2)
 
     @patch("core.pipeline.validate_pipeline_inputs")
     @patch("core.pipeline.prepare_output_dirs")
@@ -47,14 +48,15 @@ class TestPipeline(unittest.TestCase):
         mock_validate.return_value = [Path("input.wav")]
         out_dir = Path("out")
         mock_dirs.return_value = {
-            "merged": out_dir / "merged",
-            "processed": out_dir / "processed",
-            "subtitles": out_dir / "subtitles",
-            "chunks": out_dir / "chunks",
-            "metadata": out_dir / "metadata"
+            "merged": out_dir / "audio_project" / "merged",
+            "processed": out_dir / "audio_project" / "processed",
+            "subtitles": out_dir / "audio_project" / "subtitles",
+            "chunks": out_dir / "audio_project" / "chunks",
+            "shortened": out_dir / "audio_project" / "shortened",
+            "metadata": out_dir / "audio_project" / "metadata"
         }
-        mock_level.return_value = out_dir / "processed" / "leveled.wav"
-        mock_shorten.return_value = out_dir / "processed" / "processed.wav"
+        mock_level.return_value = out_dir / "audio_project" / "processed" / "leveled.wav"
+        mock_shorten.return_value = out_dir / "audio_project" / "shortened" / "shortened.wav"
         
         opts = PipelineOptions(
             merge_first=False,
@@ -65,9 +67,9 @@ class TestPipeline(unittest.TestCase):
         
         res = run_audio_pipeline([Path("input.wav")], out_dir, opts)
         
-        self.assertEqual(res.working_audio, (out_dir / "processed" / "processed.wav").as_posix())
-        self.assertEqual(res.leveled_file, (out_dir / "processed" / "leveled.wav").as_posix())
-        self.assertEqual(res.shortened_file, (out_dir / "processed" / "processed.wav").as_posix())
+        self.assertEqual(res.working_audio, (out_dir / "audio_project" / "processed" / "leveled.wav").as_posix())
+        self.assertEqual(res.leveled_file, (out_dir / "audio_project" / "processed" / "leveled.wav").as_posix())
+        self.assertEqual(res.shortened_file, (out_dir / "audio_project" / "shortened" / "shortened.wav").as_posix())
         mock_level.assert_called_once()
         mock_shorten.assert_called_once()
         mock_export_meta.assert_called_once()
@@ -80,13 +82,14 @@ class TestPipeline(unittest.TestCase):
         mock_validate.return_value = [Path("1.wav"), Path("2.wav")]
         out_dir = Path("out")
         mock_dirs.return_value = {
-            "merged": out_dir / "merged",
-            "processed": out_dir / "processed",
-            "subtitles": out_dir / "subtitles",
-            "chunks": out_dir / "chunks",
-            "metadata": out_dir / "metadata"
+            "merged": out_dir / "audio_project" / "merged",
+            "processed": out_dir / "audio_project" / "processed",
+            "subtitles": out_dir / "audio_project" / "subtitles",
+            "chunks": out_dir / "audio_project" / "chunks",
+            "shortened": out_dir / "audio_project" / "shortened",
+            "metadata": out_dir / "audio_project" / "metadata"
         }
-        mock_merge.return_value = out_dir / "merged" / "merged.wav"
+        mock_merge.return_value = out_dir / "audio_project" / "merged" / "merged.wav"
         
         opts = PipelineOptions(
             merge_first=True,
@@ -96,7 +99,7 @@ class TestPipeline(unittest.TestCase):
         )
         
         res = run_audio_pipeline([Path("1.wav"), Path("2.wav")], out_dir, opts)
-        self.assertEqual(res.merged_file, (out_dir / "merged" / "merged.wav").as_posix())
+        self.assertEqual(res.merged_file, (out_dir / "audio_project" / "merged" / "merged.wav").as_posix())
         mock_merge.assert_called_once()
 
     @patch("core.pipeline.validate_pipeline_inputs")
@@ -108,15 +111,16 @@ class TestPipeline(unittest.TestCase):
         mock_validate.return_value = [Path("input.wav")]
         out_dir = Path("out")
         mock_dirs.return_value = {
-            "merged": out_dir / "merged",
-            "processed": out_dir / "processed",
-            "subtitles": out_dir / "subtitles",
-            "chunks": out_dir / "chunks",
-            "metadata": out_dir / "metadata"
+            "merged": out_dir / "audio_project" / "merged",
+            "processed": out_dir / "audio_project" / "processed",
+            "subtitles": out_dir / "audio_project" / "subtitles",
+            "chunks": out_dir / "audio_project" / "chunks",
+            "shortened": out_dir / "audio_project" / "shortened",
+            "metadata": out_dir / "audio_project" / "metadata"
         }
         
         mock_transcribe.return_value = [{"start": 0.0, "end": 1.0, "text": "Hello"}]
-        mock_export_subs.return_value = {"srt": "out/subtitles/subtitles.srt", "vtt": "out/subtitles/subtitles.vtt"}
+        mock_export_subs.return_value = {"srt": "out/audio_project/subtitles/subtitles.srt", "vtt": "out/audio_project/subtitles/subtitles.vtt"}
         
         opts = PipelineOptions(
             merge_first=False,
@@ -128,7 +132,7 @@ class TestPipeline(unittest.TestCase):
         )
         
         res = run_audio_pipeline([Path("input.wav")], out_dir, opts)
-        self.assertEqual(res.subtitle_files["srt"], "out/subtitles/subtitles.srt")
+        self.assertEqual(res.subtitle_files["srt"], "out/audio_project/subtitles/subtitles.srt")
         mock_transcribe.assert_called_once()
         called_args = mock_transcribe.call_args[0]
         self.assertEqual(called_args[0], Path("input.wav"))
@@ -145,11 +149,12 @@ class TestPipeline(unittest.TestCase):
         mock_validate.return_value = [Path("input.wav")]
         out_dir = Path("out")
         mock_dirs.return_value = {
-            "merged": out_dir / "merged",
-            "processed": out_dir / "processed",
-            "subtitles": out_dir / "subtitles",
-            "chunks": out_dir / "chunks",
-            "metadata": out_dir / "metadata"
+            "merged": out_dir / "audio_project" / "merged",
+            "processed": out_dir / "audio_project" / "processed",
+            "subtitles": out_dir / "audio_project" / "subtitles",
+            "chunks": out_dir / "audio_project" / "chunks",
+            "shortened": out_dir / "audio_project" / "shortened",
+            "metadata": out_dir / "audio_project" / "metadata"
         }
         
         mock_transcribe.return_value = [{"start": 0.0, "end": 1.0, "text": "Hello"}]
@@ -182,8 +187,9 @@ class TestPipeline(unittest.TestCase):
         
         res = run_batch_pipeline([Path("1.wav"), Path("2.wav")], Path("out"))
         self.assertEqual(len(res), 2)
-        self.assertEqual(res[0].output_dir, "out/1")
-        self.assertEqual(res[1].output_dir, "out/2")
+        self.assertEqual(res[0].output_dir, "out/audio_project")
+        self.assertEqual(res[0].project_name, "1")
+        self.assertEqual(res[1].project_name, "2")
 
     def test_pipeline_result_to_dict(self):
         res = PipelineResult(
@@ -195,3 +201,76 @@ class TestPipeline(unittest.TestCase):
         data = pipeline_result_to_dict(res)
         self.assertEqual(data["project_name"], "proj")
         self.assertEqual(data["output_dir"], "out")
+
+    @patch("core.pipeline.validate_pipeline_inputs")
+    @patch("core.pipeline.prepare_output_dirs")
+    @patch("core.pipeline.export_project_json")
+    @patch("pathlib.Path.exists")
+    def test_run_audio_pipeline_folder_safety_suffix(self, mock_exists, mock_export_meta, mock_dirs, mock_validate):
+        mock_validate.return_value = [Path("input.wav")]
+        out_dir = Path("out")
+        
+        opts = PipelineOptions(
+            project_name="audio_project",
+            overwrite=False,
+            enable_volume_leveling=False,
+            enable_silence_shortening=False
+        )
+        
+        with patch("core.pipeline.Path.exists") as mock_path_exists:
+            mock_path_exists.side_effect = [True, False]
+            res = run_audio_pipeline([Path("input.wav")], out_dir, opts)
+            
+        self.assertEqual(res.project_name, "audio_project_01")
+        self.assertEqual(res.output_dir, (out_dir / "audio_project_01").as_posix())
+
+    @patch("core.pipeline.validate_pipeline_inputs")
+    @patch("core.pipeline.prepare_output_dirs")
+    @patch("core.pipeline.merge_audio_files")
+    @patch("core.pipeline.export_project_json")
+    def test_run_audio_pipeline_single_file_merge_skip(self, mock_export_meta, mock_merge, mock_dirs, mock_validate):
+        mock_validate.return_value = [Path("single.wav")]
+        out_dir = Path("out")
+        
+        opts = PipelineOptions(
+            merge_first=True,
+            enable_volume_leveling=False,
+            enable_silence_shortening=False
+        )
+        
+        res = run_audio_pipeline([Path("single.wav")], out_dir, opts)
+        self.assertIsNone(res.merged_file)
+        mock_merge.assert_not_called()
+
+    @patch("core.pipeline.validate_pipeline_inputs")
+    @patch("core.pipeline.prepare_output_dirs")
+    @patch("core.pipeline.shorten_silence")
+    @patch("core.pipeline.transcribe_media")
+    @patch("core.pipeline.export_project_json")
+    def test_run_audio_pipeline_silence_shortening_routing(self, mock_export_meta, mock_transcribe, mock_shorten, mock_dirs, mock_validate):
+        mock_validate.return_value = [Path("input.wav")]
+        out_dir = Path("out")
+        mock_dirs.return_value = {
+            "merged": out_dir / "audio_project" / "merged",
+            "processed": out_dir / "audio_project" / "processed",
+            "subtitles": out_dir / "audio_project" / "subtitles",
+            "chunks": out_dir / "audio_project" / "chunks",
+            "shortened": out_dir / "audio_project" / "shortened",
+            "metadata": out_dir / "audio_project" / "metadata"
+        }
+        mock_shorten.return_value = out_dir / "audio_project" / "shortened" / "shortened.wav"
+        
+        opts = PipelineOptions(
+            merge_first=False,
+            enable_volume_leveling=False,
+            enable_silence_shortening=True,
+            enable_transcription=True
+        )
+        
+        res = run_audio_pipeline([Path("input.wav")], out_dir, opts)
+        mock_transcribe.assert_called_once()
+        called_args = mock_transcribe.call_args[0]
+        self.assertEqual(called_args[0], Path("input.wav"))
+        
+        self.assertEqual(res.working_audio, Path("input.wav").as_posix())
+        self.assertEqual(res.shortened_file, (out_dir / "audio_project" / "shortened" / "shortened.wav").as_posix())

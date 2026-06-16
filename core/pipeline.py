@@ -1,4 +1,6 @@
 import os
+import re
+import datetime
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -72,20 +74,24 @@ def validate_pipeline_inputs(input_paths: List[Path]) -> List[Path]:
 
 def prepare_output_dirs(output_dir: Path) -> Dict[str, Path]:
     """
-    Create output subdirectories: merged, processed, subtitles, chunks, metadata.
+    Return output subdirectories: merged, processed, subtitles, chunks, shortened, metadata.
+    Creates the base directory and metadata directory initially.
     """
     output_dir_obj = Path(output_dir)
+    output_dir_obj.mkdir(parents=True, exist_ok=True)
+    
     dirs = {
         "merged": output_dir_obj / "merged",
         "processed": output_dir_obj / "processed",
         "subtitles": output_dir_obj / "subtitles",
         "chunks": output_dir_obj / "chunks",
+        "shortened": output_dir_obj / "shortened",
         "metadata": output_dir_obj / "metadata"
     }
     
-    for d in dirs.values():
-        d.mkdir(parents=True, exist_ok=True)
-        
+    # Always create metadata directory
+    dirs["metadata"].mkdir(parents=True, exist_ok=True)
+    
     return dirs
 
 
@@ -109,7 +115,32 @@ def run_audio_pipeline(
             "Please enable merge_first or use run_batch_pipeline to process files individually."
         )
         
-    dirs = prepare_output_dirs(output_dir_obj)
+    # 1. Resolve final project directory with safety suffix increments
+    def sanitize_folder_name(name: str) -> str:
+        return re.sub(r'[<>:"/\\|?*]', '_', name).strip()
+
+    if not options.project_name or options.project_name.strip() == "":
+        first_stem = validated_inputs[0].stem
+        sanitized_stem = sanitize_folder_name(first_stem)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        proj_folder_name = f"{sanitized_stem}_{timestamp}"
+    else:
+        proj_folder_name = sanitize_folder_name(options.project_name)
+
+    final_project_dir = Path(output_dir) / proj_folder_name
+    if final_project_dir.exists() and not options.overwrite:
+        suffix = 1
+        while True:
+            candidate = Path(output_dir) / f"{proj_folder_name}_{suffix:02d}"
+            if not candidate.exists():
+                final_project_dir = candidate
+                break
+            suffix += 1
+
+    # Update options.project_name to match resolved folder name
+    options.project_name = final_project_dir.name
+
+    dirs = prepare_output_dirs(final_project_dir)
     
     current_audio = validated_inputs[0]
     merged_file = None
@@ -118,18 +149,22 @@ def run_audio_pipeline(
     sub_files = None
     chunks_meta = None
     
-    # 1. Merge if merge_first is enabled
+    # 1. Merge if merge_first is enabled and there are multiple inputs
     if options.merge_first:
-        merged_file = dirs["merged"] / f"merged.{options.output_format}"
-        merge_opts = MergeOptions(
-            gap_seconds=options.merge_gap_seconds,
-            output_format=options.output_format,
-            overwrite=options.overwrite
-        )
-        try:
-            current_audio = merge_audio_files(validated_inputs, merged_file, merge_opts)
-        except AudioMergeError as e:
-            raise PipelineError(f"Failed in merger step: {e}") from e
+        if len(validated_inputs) > 1:
+            merged_file = dirs["merged"] / f"merged.{options.output_format}"
+            merge_opts = MergeOptions(
+                gap_seconds=options.merge_gap_seconds,
+                output_format=options.output_format,
+                overwrite=options.overwrite
+            )
+            try:
+                current_audio = merge_audio_files(validated_inputs, merged_file, merge_opts)
+            except AudioMergeError as e:
+                raise PipelineError(f"Failed in merger step: {e}") from e
+        else:
+            print("Merge requested but only one input file provided. Skipping merge step safely.")
+            merged_file = None
             
     # 2. Volume Leveling
     if options.enable_volume_leveling:
@@ -143,13 +178,16 @@ def run_audio_pipeline(
         except VolumeLevelingError as e:
             raise PipelineError(f"Failed in volume leveling step: {e}") from e
             
-    # 3. Silence Shortening
+    # Define Main Processed Source
+    main_processed_source = current_audio
+            
+    # 3. Silence Shortening (independent branch)
     if options.enable_silence_shortening:
-        shortened_file = dirs["processed"] / f"processed.{options.output_format}"
+        shortened_file = dirs["shortened"] / f"shortened.{options.output_format}"
         try:
             sil_opts = options_from_preset(options.silence_preset)
             sil_opts.overwrite = options.overwrite
-            current_audio = shorten_silence(current_audio, shortened_file, sil_opts)
+            shorten_silence(main_processed_source, shortened_file, sil_opts)
         except SilenceShortenerError as e:
             raise PipelineError(f"Failed in silence shortening step: {e}") from e
             
@@ -159,7 +197,7 @@ def run_audio_pipeline(
         try:
             model_size = model_size_from_preset(options.transcription_preset)
             trans_opts = TranscriptionOptions(model_size=model_size, language=options.language)
-            segments = transcribe_media(current_audio, trans_opts)
+            segments = transcribe_media(main_processed_source, trans_opts)
         except TranscriptionError as e:
             raise PipelineError(f"Failed in transcription step: {e}") from e
             
@@ -177,7 +215,7 @@ def run_audio_pipeline(
                         output_format=options.output_format,
                         overwrite=options.overwrite
                     )
-                    chunks_meta = cut_audio_by_sentences(current_audio, sentences, dirs["chunks"], cut_opts)
+                    chunks_meta = cut_audio_by_sentences(main_processed_source, sentences, dirs["chunks"], cut_opts)
             except (SentenceSplitError, AudioCutError) as e:
                 raise PipelineError(f"Failed in splitting/cutting step: {e}") from e
                 
@@ -197,12 +235,14 @@ def run_audio_pipeline(
     proj_meta = build_project_metadata(
         project_name=options.project_name,
         input_files=validated_inputs,
-        output_dir=output_dir_obj,
+        output_dir=final_project_dir,
         chunks=chunks_meta if chunks_meta else [],
         processing_options=processing_options_dict,
         subtitle_files=subtitles_dict_str,
         merged_file=merged_file,
-        cleaned_file=shortened_file if shortened_file else leveled_file
+        cleaned_file=leveled_file if leveled_file else (merged_file if merged_file else validated_inputs[0]),
+        leveled_file=leveled_file,
+        shortened_file=shortened_file
     )
     
     try:
@@ -212,9 +252,9 @@ def run_audio_pipeline(
         
     return PipelineResult(
         project_name=options.project_name,
-        output_dir=output_dir_obj.as_posix(),
+        output_dir=final_project_dir.as_posix(),
         input_files=[p.as_posix() for p in validated_inputs],
-        working_audio=current_audio.as_posix(),
+        working_audio=main_processed_source.as_posix(),
         merged_file=merged_file.as_posix() if merged_file else None,
         leveled_file=leveled_file.as_posix() if leveled_file else None,
         shortened_file=shortened_file.as_posix() if shortened_file else None,
@@ -230,13 +270,27 @@ def run_batch_pipeline(
     options: Optional[PipelineOptions] = None
 ) -> List[PipelineResult]:
     """
-    Run batch pipelines sequentially, isolating each file into its own stem subdirectory.
+    Run batch pipelines sequentially, isolating each file into its own stem subdirectory
+    inside a unified parent batch folder.
     """
     if options is None:
         options = PipelineOptions()
         
     validated_inputs = validate_pipeline_inputs(input_paths)
     output_dir_obj = Path(output_dir)
+    
+    def sanitize_folder_name(name: str) -> str:
+        return re.sub(r'[<>:"/\\|?*]', '_', name).strip()
+
+    # Determine parent batch directory name
+    if not options.project_name or options.project_name.strip() == "":
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        parent_name = f"batch_project_{timestamp}"
+    else:
+        parent_name = sanitize_folder_name(options.project_name)
+
+    parent_batch_dir = output_dir_obj / parent_name
+    parent_batch_dir.mkdir(parents=True, exist_ok=True)
     
     results = []
     for path in validated_inputs:
@@ -249,7 +303,7 @@ def run_batch_pipeline(
             enable_sentence_split=options.enable_sentence_split,
             enable_audio_cutting=options.enable_audio_cutting,
             output_format=options.output_format,
-            project_name=f"{options.project_name}_{path.stem}",
+            project_name=path.stem,
             overwrite=options.overwrite,
             volume_preset=options.volume_preset,
             silence_preset=options.silence_preset,
@@ -258,9 +312,8 @@ def run_batch_pipeline(
             subtitle_base_name=options.subtitle_base_name
         )
         
-        single_out_dir = output_dir_obj / path.stem
         try:
-            res = run_audio_pipeline([path], single_out_dir, single_options)
+            res = run_audio_pipeline([path], parent_batch_dir, single_options)
             results.append(res)
         except Exception as e:
             raise PipelineError(f"Pipeline failed on file '{path}': {e}") from e

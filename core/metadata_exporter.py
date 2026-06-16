@@ -31,6 +31,8 @@ class ProjectMetadata:
     subtitle_files: Optional[Dict[str, str]] = None
     merged_file: Optional[str] = None
     cleaned_file: Optional[str] = None
+    leveled_file: Optional[str] = None
+    shortened_file: Optional[str] = None
 
 
 def normalize_chunk_metadata(chunks: List[Union[AudioChunkMetadata, Dict[str, Any]]]) -> List[AudioChunkMetadata]:
@@ -179,7 +181,9 @@ def build_project_metadata(
     processing_options: Optional[Dict[str, Any]] = None,
     subtitle_files: Optional[Dict[str, Union[Path, str]]] = None,
     merged_file: Optional[Union[Path, str]] = None,
-    cleaned_file: Optional[Union[Path, str]] = None
+    cleaned_file: Optional[Union[Path, str]] = None,
+    leveled_file: Optional[Union[Path, str]] = None,
+    shortened_file: Optional[Union[Path, str]] = None
 ) -> ProjectMetadata:
     """
     Build a ProjectMetadata object, auto-generating the ISO timestamp.
@@ -195,6 +199,8 @@ def build_project_metadata(
         
     norm_merged = Path(merged_file).as_posix() if merged_file is not None else None
     norm_cleaned = Path(cleaned_file).as_posix() if cleaned_file is not None else None
+    norm_leveled = Path(leveled_file).as_posix() if leveled_file is not None else None
+    norm_shortened = Path(shortened_file).as_posix() if shortened_file is not None else None
     
     return ProjectMetadata(
         project_name=project_name,
@@ -205,5 +211,7 @@ def build_project_metadata(
         chunks=norm_chunks,
         subtitle_files=norm_subtitles,
         merged_file=norm_merged,
-        cleaned_file=norm_cleaned
+        cleaned_file=norm_cleaned,
+        leveled_file=norm_leveled,
+        shortened_file=norm_shortened
     )
