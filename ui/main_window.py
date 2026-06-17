@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any, Callable
 
 from PySide6.QtCore import (
     Qt, QThread, Signal, Slot, QSize, QPropertyAnimation,
-    QEasingCurve, Property, QPoint, QTimer
+    QEasingCurve, Property, QPoint, QTimer, QUrl
 )
 from PySide6.QtGui import QPainter, QColor, QFont, QFontDatabase
 from PySide6.QtWidgets import (
@@ -198,11 +198,15 @@ class DragDropTable(QTableWidget):
     def dragEnterEvent(self, event):
         if event.source() == self:
             event.acceptProposedAction()
+        elif event.mimeData().hasUrls():
+            event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
         if event.source() == self:
+            event.acceptProposedAction()
+        elif event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
@@ -218,8 +222,85 @@ class DragDropTable(QTableWidget):
                 event.accept()
             else:
                 event.ignore()
+        elif event.mimeData().hasUrls():
+            # External file drop from OS – bubble up to parent DropZoneFrame
+            event.ignore()
         else:
             super().dropEvent(event)
+
+
+# Supported audio/video extensions for external drag-and-drop
+_SUPPORTED_EXTS = {
+    ".wav", ".mp3", ".m4a", ".flac", ".ogg",
+    ".mp4", ".mkv", ".avi", ".mov"
+}
+
+
+class DropZoneFrame(QFrame):
+    """Wraps the file table with OS-level file drag-and-drop support.
+    Emits files_dropped(list[Path]) when media files are dropped.
+    """
+    files_dropped = Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("DropZoneFrame")
+        self.setAcceptDrops(True)
+        self._highlighting = False
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            paths = self._media_urls(event.mimeData().urls())
+            if paths:
+                self._set_highlight(True)
+                event.acceptProposedAction()
+                return
+        super().dragEnterEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self._set_highlight(False)
+        super().dragLeaveEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            paths = self._media_urls(event.mimeData().urls())
+            if paths:
+                event.acceptProposedAction()
+                return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        self._set_highlight(False)
+        if event.mimeData().hasUrls():
+            paths = self._media_urls(event.mimeData().urls())
+            if paths:
+                self.files_dropped.emit(paths)
+                event.acceptProposedAction()
+                return
+        super().dropEvent(event)
+
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    def _media_urls(self, urls) -> List[Path]:
+        result = []
+        for url in urls:
+            if url.isLocalFile():
+                p = Path(url.toLocalFile())
+                if p.suffix.lower() in _SUPPORTED_EXTS:
+                    result.append(p)
+        return result
+
+    def _set_highlight(self, active: bool):
+        if active == self._highlighting:
+            return
+        self._highlighting = active
+        if active:
+            self.setStyleSheet(
+                "QFrame#DropZoneFrame { border: 2px dashed #3b82f6;"
+                " border-radius: 10px; background-color: rgba(59,130,246,0.06); }"
+            )
+        else:
+            self.setStyleSheet("")
 
 
 class IconBadge(QLabel):
@@ -572,29 +653,33 @@ class MainWindow(QMainWindow):
     # ── Section builders ──────────────────────────────────────────────────
 
     def _build_input_section(self):
-        # File list action buttons
+        # ── Action buttons row ────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
 
         self.btn_add_files = QPushButton("＋  Thêm tệp")
         self.btn_add_files.setObjectName("btn_add")
         self.btn_add_files.setCursor(Qt.PointingHandCursor)
+        self.btn_add_files.setMinimumHeight(34)
         self.btn_add_files.clicked.connect(self.browse_inputs)
 
         self.btn_remove_selected = QPushButton("🗑  Xóa đã chọn")
         self.btn_remove_selected.setObjectName("btn_remove")
         self.btn_remove_selected.setCursor(Qt.PointingHandCursor)
+        self.btn_remove_selected.setMinimumHeight(34)
         self.btn_remove_selected.clicked.connect(self.remove_selected)
 
         self.btn_move_up = QPushButton("↑  Lên")
         self.btn_move_up.setObjectName("btn_neutral")
         self.btn_move_up.setCursor(Qt.PointingHandCursor)
+        self.btn_move_up.setMinimumHeight(34)
         self.btn_move_up.clicked.connect(self.move_up)
 
         self.btn_move_down = QPushButton("↓  Xuống")
         self.btn_move_down.setObjectName("btn_neutral")
         self.btn_move_down.setCursor(Qt.PointingHandCursor)
+        self.btn_move_down.setMinimumHeight(34)
         self.btn_move_down.clicked.connect(self.move_down)
 
         btn_row.addWidget(self.btn_add_files)
@@ -605,27 +690,40 @@ class MainWindow(QMainWindow):
 
         self.panel_input.content_layout.addLayout(btn_row)
 
-        # File table
+        # ── File table inside drop zone ────────────────────────────────────
+        self.drop_zone = DropZoneFrame()
+        drop_zone_layout = QVBoxLayout(self.drop_zone)
+        drop_zone_layout.setContentsMargins(0, 0, 0, 0)
+        drop_zone_layout.setSpacing(0)
+
         self.table = DragDropTable()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["#", "Tên tệp", "Thời lượng", "Kích thước", "✕"])
-        self.table.setColumnWidth(0, 50)
-        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(0, 46)
+        self.table.setColumnWidth(2, 92)
         self.table.setColumnWidth(3, 100)
-        self.table.setColumnWidth(4, 40)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        self.table.setColumnWidth(4, 38)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Interactive)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
         self.table.setMinimumHeight(180)
+        self.table.setFocusPolicy(Qt.StrongFocus)
         self.table.order_changed.connect(self.handle_row_move)
-        self.panel_input.content_layout.addWidget(self.table)
 
-        # Summary chips
+        drop_zone_layout.addWidget(self.table)
+        self.drop_zone.files_dropped.connect(self.add_files_from_paths)
+        self.panel_input.content_layout.addWidget(self.drop_zone)
+
+        # ── Summary chips ─────────────────────────────────────────────────
         summary_row = QHBoxLayout()
-        summary_row.setContentsMargins(0, 2, 0, 0)
-        summary_row.setSpacing(10)
+        summary_row.setContentsMargins(0, 4, 0, 0)
+        summary_row.setSpacing(8)
 
         self.lbl_sum_count = QLabel("📁  Tổng số: 0 tệp")
         self.lbl_sum_duration = QLabel("⏱  Tổng thời lượng: 00:00")
@@ -644,42 +742,56 @@ class MainWindow(QMainWindow):
         self.panel_input.content_layout.addWidget(self.lbl_summary)
 
     def _build_output_section(self):
-        grid = QGridLayout()
-        grid.setSpacing(8)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setColumnStretch(1, 1)
+        v = QVBoxLayout()
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(10)
 
-        lbl_out = QLabel("Thư mục đầu ra:")
+        # ── Output folder ─────────────────────────────────────────────────
+        lbl_out = QLabel("Thư mục đầu ra")
         lbl_out.setObjectName("FieldLabel")
-        grid.addWidget(lbl_out, 0, 0)
+        v.addWidget(lbl_out)
+
+        folder_row = QHBoxLayout()
+        folder_row.setContentsMargins(0, 0, 0, 0)
+        folder_row.setSpacing(6)
 
         self.txt_output = QLineEdit()
+        self.txt_output.setObjectName("InputField")
         self.txt_output.setPlaceholderText("Chọn thư mục lưu kết quả...")
-        grid.addWidget(self.txt_output, 0, 1)
+        self.txt_output.setMinimumHeight(34)
+        folder_row.addWidget(self.txt_output, 1)
 
         self.btn_browse_output = QPushButton("📁  Chọn thư mục")
         self.btn_browse_output.setObjectName("btn_neutral")
         self.btn_browse_output.setCursor(Qt.PointingHandCursor)
+        self.btn_browse_output.setMinimumHeight(34)
         self.btn_browse_output.clicked.connect(self.browse_output)
-        grid.addWidget(self.btn_browse_output, 0, 2)
+        folder_row.addWidget(self.btn_browse_output)
 
-        lbl_proj = QLabel("Tên dự án:")
+        v.addLayout(folder_row)
+
+        # ── Project name ──────────────────────────────────────────────────
+        lbl_proj = QLabel("Tên dự án")
         lbl_proj.setObjectName("FieldLabel")
-        grid.addWidget(lbl_proj, 1, 0)
+        v.addWidget(lbl_proj)
 
         self.txt_project_name = QLineEdit()
+        self.txt_project_name.setObjectName("InputField")
         self.txt_project_name.setText("audio_project")
-        grid.addWidget(self.txt_project_name, 1, 1, 1, 2)
+        self.txt_project_name.setMinimumHeight(34)
+        v.addWidget(self.txt_project_name)
 
         lbl_proj_hint = QLabel("Tên dự án sẽ được dùng để tạo thư mục kết quả.")
         lbl_proj_hint.setObjectName("HintLabel")
-        grid.addWidget(lbl_proj_hint, 2, 1, 1, 2)
+        v.addWidget(lbl_proj_hint)
 
-        lbl_fmt = QLabel("Định dạng xuất:")
+        # ── Output format ─────────────────────────────────────────────────
+        lbl_fmt = QLabel("Định dạng xuất")
         lbl_fmt.setObjectName("FieldLabel")
-        grid.addWidget(lbl_fmt, 3, 0)
+        v.addWidget(lbl_fmt)
 
         self.combo_out_format = QComboBox()
+        self.combo_out_format.setObjectName("OutputFormatCombo")
         self.combo_out_format.addItems([
             ".wav (WAV - Không nén)",
             ".mp3 (MP3 - Nén phổ biến)",
@@ -687,9 +799,10 @@ class MainWindow(QMainWindow):
             ".flac (FLAC - Không nén)",
             ".ogg (OGG - Vorbis)"
         ])
-        grid.addWidget(self.combo_out_format, 3, 1, 1, 2)
+        self.combo_out_format.setMinimumHeight(34)
+        v.addWidget(self.combo_out_format)
 
-        self.panel_output.content_layout.addLayout(grid)
+        self.panel_output.content_layout.addLayout(v)
         self.panel_output.content_layout.addStretch()
 
     def _build_processing_section(self):
@@ -898,12 +1011,15 @@ class MainWindow(QMainWindow):
     def apply_styles(self):
         self.setStyleSheet("""
 /* ─── Base ────────────────────────────────────────────── */
-QMainWindow, QScrollArea > QWidget > QWidget {
-    background-color: #020617;
+QMainWindow {
+    background-color: #010d1f;
 }
 QScrollArea {
-    background-color: #020617;
+    background-color: #010d1f;
     border: none;
+}
+QScrollArea > QWidget > QWidget {
+    background-color: #010d1f;
 }
 QWidget {
     color: #f1f5f9;
@@ -913,15 +1029,15 @@ QWidget {
 
 /* ─── Section panels ──────────────────────────────────── */
 QFrame#SectionPanel {
-    background-color: #0b1425;
-    border: 1px solid #1e293b;
+    background-color: #080f1e;
+    border: 1px solid #1e2d45;
     border-radius: 10px;
 }
 
 /* ─── Feature cards ───────────────────────────────────── */
 QFrame#FeatureCard {
-    background-color: #0f172a;
-    border: 1px solid #1e293b;
+    background-color: #0c1526;
+    border: 1px solid #1e2d45;
     border-radius: 8px;
 }
 QFrame#FeatureCard:hover {
@@ -930,8 +1046,8 @@ QFrame#FeatureCard:hover {
 
 /* ─── Subtitle content frame ──────────────────────────── */
 QFrame#SubContentPanel {
-    background-color: #0f172a;
-    border: 1px solid #1e293b;
+    background-color: #0c1526;
+    border: 1px solid #1e2d45;
     border-radius: 8px;
 }
 
@@ -1027,26 +1143,41 @@ QLabel#FooterLabel {
 
 /* ─── Summary chips ───────────────────────────────────── */
 QLabel#SummaryChip {
-    background-color: #1e293b;
+    background-color: #0f172a;
     color: #94a3b8;
-    padding: 5px 12px;
+    padding: 5px 14px;
     border-radius: 6px;
     font-size: 11px;
     font-weight: 600;
-    border: none;
+    border: 1px solid #1e293b;
+}
+
+/* ─── Drop zone frame ─────────────────────────────────── */
+QFrame#DropZoneFrame {
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    background-color: transparent;
 }
 
 /* ─── Inputs ──────────────────────────────────────────── */
 QLineEdit, QComboBox {
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: #0f172a;
+    border: 1px solid #2d3f5c;
     border-radius: 6px;
     padding: 6px 10px;
     color: #f1f5f9;
     min-height: 22px;
 }
-QLineEdit:focus, QComboBox:focus {
+QLineEdit:focus {
     border-color: #3b82f6;
+    background-color: #0f172a;
+}
+QComboBox:focus {
+    border-color: #3b82f6;
+}
+QComboBox#OutputFormatCombo, QLineEdit#InputField {
+    background-color: #0f172a;
+    border: 1px solid #2d3f5c;
 }
 QComboBox::drop-down {
     border: none;
@@ -1054,13 +1185,18 @@ QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: center right;
 }
+QComboBox::down-arrow {
+    width: 10px;
+    height: 10px;
+}
 QComboBox QAbstractItemView {
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: #0f172a;
+    border: 1px solid #2d3f5c;
     selection-background-color: #2563eb;
     selection-color: #ffffff;
     color: #f1f5f9;
     outline: none;
+    padding: 4px;
 }
 QComboBox#SmallCombo {
     font-size: 11px;
@@ -1152,30 +1288,12 @@ QPushButton#btn_clear_log {
 }
 QPushButton#btn_clear_log:hover { background-color: #334155; color: #f1f5f9; }
 
-/* ─── Table ───────────────────────────────────────────── */
-QTableWidget {
-    background-color: #020617;
-    border: 1px solid #1e293b;
-    border-radius: 8px;
-    gridline-color: #0f172a;
-    color: #f1f5f9;
-    selection-background-color: #1e293b;
-}
-QHeaderView::section {
-    background-color: #0f172a;
-    color: #64748b;
-    padding: 7px;
-    border: none;
-    border-bottom: 1px solid #1e293b;
-    font-weight: 700;
-    font-size: 12px;
-}
 QTableWidget::item {
-    padding: 6px;
-    border-bottom: 1px solid #0d1829;
+    padding: 6px 8px;
+    border: none;
 }
 QTableWidget::item:selected {
-    background-color: #1e293b;
+    background-color: #1e3a5f;
     color: #ffffff;
 }
 
@@ -1393,6 +1511,22 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
                     self.txt_project_name.setText(
                         self.input_paths_list[0].stem.replace(" ", "_")
                     )
+
+    @Slot(list)
+    def add_files_from_paths(self, paths: List[Path]):
+        """Add files from an external drop (DropZoneFrame signal)."""
+        added = 0
+        for p in paths:
+            if p not in self.input_paths_list:
+                self.input_paths_list.append(p)
+                added += 1
+        if added > 0:
+            self.update_file_table()
+            if (self.txt_project_name.text() in ["", "audio_project"]
+                    and self.input_paths_list):
+                self.txt_project_name.setText(
+                    self.input_paths_list[0].stem.replace(" ", "_")
+                )
 
     @Slot()
     def browse_output(self):
