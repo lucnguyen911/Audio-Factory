@@ -14,6 +14,7 @@ class TranscriptSegment:
     end: float
     text: str
     index: Optional[int] = None
+    words: Optional[List[Dict[str, Any]]] = None
 
 
 def _split_seconds(seconds: float) -> tuple:
@@ -56,12 +57,14 @@ def normalize_segments(segments: List[Union[TranscriptSegment, Dict[str, Any]]])
             start = item.start
             end = item.end
             text = item.text
+            words = item.words
         elif isinstance(item, dict):
             if "start" not in item or "end" not in item or "text" not in item:
                 raise SubtitleExportError(f"Missing required keys in segment dict at index {idx}: {item}")
             start = item["start"]
             end = item["end"]
             text = item["text"]
+            words = item.get("words")
         else:
             raise SubtitleExportError(f"Invalid segment type at index {idx}: {type(item)}")
             
@@ -86,7 +89,8 @@ def normalize_segments(segments: List[Union[TranscriptSegment, Dict[str, Any]]])
                 start=start_f,
                 end=end_f,
                 text=text_str,
-                index=idx + 1
+                index=idx + 1,
+                words=words
             )
         )
         
@@ -107,7 +111,7 @@ def export_srt(segments: List[Union[TranscriptSegment, Dict[str, Any]]], output_
         lines.append("")
         
     try:
-        output_path_obj.write_text("\n".join(lines), encoding="utf-8")
+        output_path_obj.write_text("\n".join(lines), encoding="utf-8-sig")
         return output_path_obj
     except Exception as e:
         raise SubtitleExportError(f"Failed to write SRT file to '{output_path_obj}': {e}") from e
@@ -153,7 +157,7 @@ def export_txt(
             lines.append(seg.text)
             
     try:
-        output_path_obj.write_text("\n".join(lines), encoding="utf-8")
+        output_path_obj.write_text("\n".join(lines), encoding="utf-8-sig")
         return output_path_obj
     except Exception as e:
         raise SubtitleExportError(f"Failed to write TXT file to '{output_path_obj}': {e}") from e

@@ -44,6 +44,11 @@ def parse_arguments(args_list=None):
         help="Merge all input files into a single audio file before processing."
     )
     parser.add_argument(
+        "--voice-cleanup",
+        action="store_true",
+        help="Enable voice cleanup / noise & breath reduction."
+    )
+    parser.add_argument(
         "--volume",
         action="store_true",
         help="Enable volume leveling (EBU R128 standard)."
@@ -52,6 +57,11 @@ def parse_arguments(args_list=None):
         "--silence",
         action="store_true",
         help="Enable shortening silence intervals."
+    )
+    parser.add_argument(
+        "--social-optimize",
+        action="store_true",
+        help="Enable social media audio optimization."
     )
     parser.add_argument(
         "--transcribe",
@@ -66,12 +76,12 @@ def parse_arguments(args_list=None):
     parser.add_argument(
         "--split-sentences",
         action="store_true",
-        help="Enable splitting transcription into sentence segments (requires --transcribe)."
+        help=argparse.SUPPRESS
     )
     parser.add_argument(
         "--cut-audio",
         action="store_true",
-        help="Enable cutting audio into chunks by sentence segments (requires --split-sentences)."
+        help=argparse.SUPPRESS
     )
     
     # Presets & Options
@@ -108,6 +118,36 @@ def parse_arguments(args_list=None):
         "--language",
         default=None,
         help="Language code for transcription (e.g. 'vi', 'en'). None for auto-detect."
+    )
+    parser.add_argument(
+        "--whisper-model",
+        default="large-v3-turbo",
+        help="Whisper model option for local ASR engine (default: large-v3-turbo)."
+    )
+    parser.add_argument(
+        "--asr-audio-speed",
+        type=float,
+        default=1.0,
+        help="ASR audio speed factor for transcription recognition speed only (default: 1.0)."
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+        help="Batch size for batched inference pipeline (default: 8)."
+    )
+    parser.add_argument(
+        "--target-video-format",
+        choices=["horizontal", "vertical"],
+        default="horizontal",
+        help="Target video format for subtitle wrapping preset (default: horizontal)."
+    )
+    parser.add_argument(
+        "--subtitle-lines",
+        type=int,
+        choices=[1, 2, 3],
+        default=1,
+        help="Maximum line count limit per subtitle cue wrapping (default: 1)."
     )
     parser.add_argument(
         "--output-format",
@@ -156,11 +196,27 @@ def print_result(result: PipelineResult, prefix: str = ""):
 def main():
     args = parse_arguments()
     
+    if args.split_sentences or args.cut_audio:
+        print("WARNING: --split-sentences and --cut-audio are deprecated and ignored in this version.", file=sys.stderr)
+        
+    resolved_lang = None
+    if args.language is not None:
+        if "Mock" not in type(args.language).__name__:
+            from core.language_options import resolve_language_code
+            try:
+                resolved_lang = resolve_language_code(args.language)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+                return
+        
     # Map CLI arguments to PipelineOptions
     options = PipelineOptions(
         merge_first=args.merge_first,
+        enable_voice_cleanup=args.voice_cleanup,
         enable_volume_leveling=args.volume,
         enable_silence_shortening=args.silence,
+        enable_social_optimize=args.social_optimize,
         enable_transcription=args.transcribe,
         enable_subtitle_export=args.subtitles,
         enable_sentence_split=args.split_sentences,
@@ -172,7 +228,12 @@ def main():
         volume_preset=args.volume_preset,
         silence_preset=args.silence_preset,
         transcription_preset=args.transcription_preset,
-        language=args.language,
+        language=resolved_lang,
+        whisper_model=args.whisper_model,
+        asr_audio_speed=args.asr_audio_speed,
+        batch_size=args.batch_size,
+        target_video_format=args.target_video_format,
+        subtitle_lines=args.subtitle_lines,
         subtitle_base_name="subtitles"
     )
     

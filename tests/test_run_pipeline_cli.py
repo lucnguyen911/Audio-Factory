@@ -233,3 +233,20 @@ class TestRunPipelineCLI(unittest.TestCase):
         
         # Check error exit code 1
         mock_exit.assert_called_once_with(1)
+
+    @patch("scripts.run_pipeline.run_audio_pipeline")
+    @patch("scripts.run_pipeline.parse_arguments")
+    @patch("sys.exit")
+    def test_main_invalid_language_error(self, mock_exit, mock_parse, mock_run_audio):
+        mock_args = MagicMock()
+        mock_args.input = ["file.wav"]
+        mock_args.batch = False
+        mock_args.language = "invalid_code"
+        mock_parse.return_value = mock_args
+        
+        main()
+        mock_exit.assert_called_once_with(1)
+        mock_run_audio.assert_not_called()
+
+if __name__ == "__main__":
+    unittest.main()

@@ -95,12 +95,12 @@ class TestSubtitleExporter(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             out_file_no_ts = Path(tmpdir) / "text_no_ts.txt"
             export_txt(segs, out_file_no_ts, include_timestamps=False)
-            content_no_ts = out_file_no_ts.read_text(encoding="utf-8")
+            content_no_ts = out_file_no_ts.read_text(encoding="utf-8-sig")
             self.assertEqual(content_no_ts.replace("\r\n", "\n"), "First line\nSecond line")
             
             out_file_ts = Path(tmpdir) / "text_ts.txt"
             export_txt(segs, out_file_ts, include_timestamps=True)
-            content_ts = out_file_ts.read_text(encoding="utf-8")
+            content_ts = out_file_ts.read_text(encoding="utf-8-sig")
             self.assertIn("[00:00:01.000 --> 00:00:02.000] First line", content_ts)
 
     def test_export_json_vietnamese(self):

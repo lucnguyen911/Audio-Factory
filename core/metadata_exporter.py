@@ -28,11 +28,11 @@ class ProjectMetadata:
     created_at: str
     processing_options: Dict[str, Any]
     chunks: List[AudioChunkMetadata]
-    subtitle_files: Optional[Dict[str, str]] = None
-    merged_file: Optional[str] = None
-    cleaned_file: Optional[str] = None
-    leveled_file: Optional[str] = None
-    shortened_file: Optional[str] = None
+    subtitle_files: Optional[Dict[str, Any]] = None
+    merged_file: Optional[Union[str, List[str]]] = None
+    cleaned_file: Optional[Union[str, List[str]]] = None
+    leveled_file: Optional[Union[str, List[str]]] = None
+    shortened_file: Optional[Union[str, List[str]]] = None
 
 
 def normalize_chunk_metadata(chunks: List[Union[AudioChunkMetadata, Dict[str, Any]]]) -> List[AudioChunkMetadata]:
@@ -179,11 +179,11 @@ def build_project_metadata(
     output_dir: Union[Path, str],
     chunks: List[Union[AudioChunkMetadata, Dict[str, Any]]],
     processing_options: Optional[Dict[str, Any]] = None,
-    subtitle_files: Optional[Dict[str, Union[Path, str]]] = None,
-    merged_file: Optional[Union[Path, str]] = None,
-    cleaned_file: Optional[Union[Path, str]] = None,
-    leveled_file: Optional[Union[Path, str]] = None,
-    shortened_file: Optional[Union[Path, str]] = None
+    subtitle_files: Optional[Dict[str, Any]] = None,
+    merged_file: Optional[Union[Path, str, List[Union[Path, str]]]] = None,
+    cleaned_file: Optional[Union[Path, str, List[Union[Path, str]]]] = None,
+    leveled_file: Optional[Union[Path, str, List[Union[Path, str]]]] = None,
+    shortened_file: Optional[Union[Path, str, List[Union[Path, str]]]] = None
 ) -> ProjectMetadata:
     """
     Build a ProjectMetadata object, auto-generating the ISO timestamp.
@@ -193,14 +193,20 @@ def build_project_metadata(
     norm_output_dir = Path(output_dir).as_posix()
     norm_chunks = normalize_chunk_metadata(chunks)
     
-    norm_subtitles = None
-    if subtitle_files is not None:
-        norm_subtitles = {k: Path(v).as_posix() for k, v in subtitle_files.items()}
-        
-    norm_merged = Path(merged_file).as_posix() if merged_file is not None else None
-    norm_cleaned = Path(cleaned_file).as_posix() if cleaned_file is not None else None
-    norm_leveled = Path(leveled_file).as_posix() if leveled_file is not None else None
-    norm_shortened = Path(shortened_file).as_posix() if shortened_file is not None else None
+    def _normalize_val(val: Any) -> Any:
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return [Path(item).as_posix() for item in val]
+        if isinstance(val, dict):
+            return {k: _normalize_val(v) for k, v in val.items()}
+        return Path(val).as_posix()
+
+    norm_subtitles = _normalize_val(subtitle_files)
+    norm_merged = _normalize_val(merged_file)
+    norm_cleaned = _normalize_val(cleaned_file)
+    norm_leveled = _normalize_val(leveled_file)
+    norm_shortened = _normalize_val(shortened_file)
     
     return ProjectMetadata(
         project_name=project_name,
