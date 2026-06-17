@@ -4,7 +4,7 @@ import datetime
 import shutil
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 from core.ffmpeg_runner import run_ffmpeg, FFmpegError
 from core.importer import validate_input_file, MediaImportError
@@ -32,6 +32,7 @@ class PipelineOptions:
     enable_volume_leveling: bool = True
     enable_silence_shortening: bool = True
     enable_social_optimize: bool = False
+    social_platform: str = "general"
     enable_transcription: bool = False
     enable_subtitle_export: bool = False
     output_format: str = "wav"
@@ -109,7 +110,8 @@ def prepare_output_dirs(output_dir: Path) -> Dict[str, Path]:
 def run_audio_pipeline(
     input_paths: List[Path],
     output_dir: Path,
-    options: Optional[PipelineOptions] = None
+    options: Optional[PipelineOptions] = None,
+    status_callback: Optional[Callable[[str], None]] = None
 ) -> PipelineResult:
     """
     Run the end-to-end audio processing pipeline on input files.
@@ -117,6 +119,11 @@ def run_audio_pipeline(
     if options is None:
         options = PipelineOptions()
         
+    def update_status(msg: str):
+        if status_callback:
+            status_callback(msg)
+
+    update_status("Validating input paths...")
     validated_inputs = validate_pipeline_inputs(input_paths)
     
     # Early language validation
@@ -125,6 +132,18 @@ def run_audio_pipeline(
         options.language = resolve_language_code(options.language)
     except ValueError as e:
         raise PipelineError(str(e)) from e
+
+    # Validate output format
+    valid_formats = {"wav", "mp3", "m4a", "flac", "ogg"}
+    fmt = options.output_format.lower().lstrip(".")
+    if fmt not in valid_formats:
+        raise PipelineError(f"Unsupported output format: '{options.output_format}'. Valid options: {', '.join(sorted(valid_formats))}")
+    options.output_format = fmt
+
+    # Validate social platform
+    valid_platforms = {"general", "youtube_facebook_x", "tiktok_instagram", "podcast_voice"}
+    if options.social_platform not in valid_platforms:
+        raise PipelineError(f"Unsupported social platform preset: '{options.social_platform}'. Valid options: {', '.join(sorted(valid_platforms))}")
         
     output_dir_obj = Path(output_dir)
     
@@ -153,6 +172,7 @@ def run_audio_pipeline(
     # Update options.project_name to match resolved folder name
     options.project_name = final_project_dir.name
 
+    update_status(f"Creating project directories under {final_project_dir}...")
     dirs = prepare_output_dirs(final_project_dir)
     
     # Tracking variables for metadata compilation
@@ -167,6 +187,7 @@ def run_audio_pipeline(
     # Check if merge_first is enabled
     if options.merge_first:
         if len(validated_inputs) > 1:
+            update_status("Merging multiple audio inputs into a single file...")
             merged_file = dirs["work"] / f"merged.{options.output_format}"
             merge_opts = MergeOptions(
                 gap_seconds=options.merge_gap_seconds,
@@ -179,13 +200,14 @@ def run_audio_pipeline(
             except AudioMergeError as e:
                 raise PipelineError(f"Failed in merger step: {e}") from e
         else:
-            print("Merge requested but only one input file provided. Skipping merge step safely.")
+            update_status("Merge requested but only one input file provided. Skipping merge step safely.")
             current_audio = validated_inputs[0]
             merged_file_path = None
             
         # Process the single/merged audio linearly
         # A. Voice Cleanup
         if options.enable_voice_cleanup:
+            update_status("Applying voice cleanup...")
             cleaned_file = dirs["work"] / f"cleaned.{options.output_format}"
             try:
                 current_audio = clean_voice(current_audio, cleaned_file, overwrite=options.overwrite)
@@ -195,6 +217,7 @@ def run_audio_pipeline(
                 
         # B. Volume Leveling
         if options.enable_volume_leveling:
+            update_status("Applying volume leveling (EBU R128 standard)...")
             leveled_file = dirs["work"] / f"leveled.{options.output_format}"
             vol_opts = VolumeLevelingOptions(
                 preset=options.volume_preset,
@@ -208,6 +231,7 @@ def run_audio_pipeline(
                 
         # C. Natural Silence Shortening
         if options.enable_silence_shortening:
+            update_status("Applying natural silence shortening...")
             shortened_file = dirs["work"] / f"shortened.{options.output_format}"
             try:
                 sil_opts = options_from_preset(options.silence_preset)
@@ -219,14 +243,16 @@ def run_audio_pipeline(
                 
         # D. Social Media Audio Optimization
         if options.enable_social_optimize:
+            update_status("Applying social media audio optimization...")
             optimized_file = dirs["work"] / f"optimized.{options.output_format}"
             try:
-                current_audio = optimize_social_audio(current_audio, optimized_file, overwrite=options.overwrite)
+                current_audio = optimize_social_audio(current_audio, optimized_file, platform=options.social_platform, overwrite=options.overwrite)
                 optimized_files = [current_audio]
             except SocialOptimizerError as e:
                 raise PipelineError(f"Failed in social optimizer step: {e}") from e
                 
         # Export final audio
+        update_status("Exporting final audio...")
         final_audio_path = dirs["final"] / f"final_audio.{options.output_format}"
         if current_audio.suffix.lower() == f".{options.output_format}":
             if final_project_dir in current_audio.parents:
@@ -240,6 +266,10 @@ def run_audio_pipeline(
                     args += ["-c:a", "libmp3lame"]
                 elif ext == "m4a":
                     args += ["-c:a", "aac"]
+                elif ext == "flac":
+                    args += ["-c:a", "flac"]
+                elif ext == "ogg":
+                    args += ["-c:a", "libvorbis"]
                 args.append(str(final_audio_path))
                 try:
                     run_ffmpeg(args)
@@ -254,6 +284,10 @@ def run_audio_pipeline(
                 args += ["-c:a", "libmp3lame"]
             elif ext == "m4a":
                 args += ["-c:a", "aac"]
+            elif ext == "flac":
+                args += ["-c:a", "flac"]
+            elif ext == "ogg":
+                args += ["-c:a", "libvorbis"]
             args.append(str(final_audio_path))
             try:
                 run_ffmpeg(args)
@@ -263,6 +297,7 @@ def run_audio_pipeline(
         
         # E. Auto Sub
         if options.enable_transcription:
+            update_status("Running speech-to-text transcription...")
             try:
                 model_size = options.whisper_model if options.whisper_model else model_size_from_preset(options.transcription_preset)
                 trans_opts = TranscriptionOptions(
@@ -275,6 +310,7 @@ def run_audio_pipeline(
                 segments = transcribe_media(final_audio_path, trans_opts)
                 
                 if options.enable_subtitle_export and segments:
+                    update_status("Optimizing and exporting subtitles...")
                     optimized_segments = optimize_subtitles(
                         segments,
                         video_format=options.target_video_format,
@@ -291,11 +327,13 @@ def run_audio_pipeline(
 
     else:
         # Merge OFF - process each input separately
-        for input_path in validated_inputs:
+        for idx, input_path in enumerate(validated_inputs, 1):
+            update_status(f"Processing input file {idx}/{len(validated_inputs)}: {input_path.name}...")
             current_audio = input_path
             
             # A. Voice Cleanup
             if options.enable_voice_cleanup:
+                update_status(f"[{input_path.name}] Applying voice cleanup...")
                 cleaned_file = dirs["work"] / f"{input_path.stem}_cleaned.{options.output_format}"
                 try:
                     current_audio = clean_voice(current_audio, cleaned_file, overwrite=options.overwrite)
@@ -305,6 +343,7 @@ def run_audio_pipeline(
                     
             # B. Volume Leveling
             if options.enable_volume_leveling:
+                update_status(f"[{input_path.name}] Applying volume leveling...")
                 leveled_file = dirs["work"] / f"{input_path.stem}_leveled.{options.output_format}"
                 vol_opts = VolumeLevelingOptions(
                     preset=options.volume_preset,
@@ -318,6 +357,7 @@ def run_audio_pipeline(
                     
             # C. Natural Silence Shortening
             if options.enable_silence_shortening:
+                update_status(f"[{input_path.name}] Shortening silence...")
                 shortened_file = dirs["work"] / f"{input_path.stem}_shortened.{options.output_format}"
                 try:
                     sil_opts = options_from_preset(options.silence_preset)
@@ -329,14 +369,16 @@ def run_audio_pipeline(
                     
             # D. Social Media Audio Optimization
             if options.enable_social_optimize:
+                update_status(f"[{input_path.name}] Applying social media audio optimization...")
                 optimized_file = dirs["work"] / f"{input_path.stem}_optimized.{options.output_format}"
                 try:
-                    current_audio = optimize_social_audio(current_audio, optimized_file, overwrite=options.overwrite)
+                    current_audio = optimize_social_audio(current_audio, optimized_file, platform=options.social_platform, overwrite=options.overwrite)
                     optimized_files.append(current_audio)
                 except SocialOptimizerError as e:
                     raise PipelineError(f"Failed in social optimizer step on file '{input_path}': {e}") from e
                     
             # Export final audio
+            update_status(f"[{input_path.name}] Exporting final audio...")
             final_audio_path = dirs["final"] / f"{input_path.stem}_final.{options.output_format}"
             if current_audio.suffix.lower() == f".{options.output_format}":
                 if final_project_dir in current_audio.parents:
@@ -350,6 +392,10 @@ def run_audio_pipeline(
                         args += ["-c:a", "libmp3lame"]
                     elif ext == "m4a":
                         args += ["-c:a", "aac"]
+                    elif ext == "flac":
+                        args += ["-c:a", "flac"]
+                    elif ext == "ogg":
+                        args += ["-c:a", "libvorbis"]
                     args.append(str(final_audio_path))
                     try:
                         run_ffmpeg(args)
@@ -364,6 +410,10 @@ def run_audio_pipeline(
                     args += ["-c:a", "libmp3lame"]
                 elif ext == "m4a":
                     args += ["-c:a", "aac"]
+                elif ext == "flac":
+                    args += ["-c:a", "flac"]
+                elif ext == "ogg":
+                    args += ["-c:a", "libvorbis"]
                 args.append(str(final_audio_path))
                 try:
                     run_ffmpeg(args)
@@ -373,6 +423,7 @@ def run_audio_pipeline(
             
             # E. Auto Sub
             if options.enable_transcription:
+                update_status(f"[{input_path.name}] Running speech-to-text transcription...")
                 try:
                     model_size = options.whisper_model if options.whisper_model else model_size_from_preset(options.transcription_preset)
                     trans_opts = TranscriptionOptions(
@@ -385,6 +436,7 @@ def run_audio_pipeline(
                     segments = transcribe_media(final_audio_path, trans_opts)
                     
                     if options.enable_subtitle_export and segments:
+                        update_status(f"[{input_path.name}] Optimizing and exporting subtitles...")
                         optimized_segments = optimize_subtitles(
                             segments,
                             video_format=options.target_video_format,
@@ -396,6 +448,7 @@ def run_audio_pipeline(
                     raise PipelineError(f"Failed in transcription/subtitle step on file '{input_path}': {e}") from e
 
     # 7. Metadata Export
+    update_status("Exporting final project metadata...")
     metadata_file = dirs["metadata"] / "project_metadata.json"
     processing_options_dict = {
         "merge_first": options.merge_first,
@@ -406,6 +459,7 @@ def run_audio_pipeline(
         "language": options.language,
         "enable_voice_cleanup": options.enable_voice_cleanup,
         "enable_social_optimize": options.enable_social_optimize,
+        "social_platform": options.social_platform,
         "whisper_model": options.whisper_model,
         "asr_audio_speed": options.asr_audio_speed,
         "batch_size": options.batch_size,
@@ -431,6 +485,7 @@ def run_audio_pipeline(
     except Exception as e:
         raise PipelineError(f"Failed to export final project metadata: {e}") from e
         
+    update_status("Pipeline completed successfully!")
     return PipelineResult(
         project_name=options.project_name,
         output_dir=final_project_dir.as_posix(),
@@ -448,7 +503,8 @@ def run_audio_pipeline(
 def run_batch_pipeline(
     input_paths: List[Path],
     output_dir: Path,
-    options: Optional[PipelineOptions] = None
+    options: Optional[PipelineOptions] = None,
+    status_callback: Optional[Callable[[str], None]] = None
 ) -> List[PipelineResult]:
     """
     Run batch pipelines sequentially, isolating each file into its own stem subdirectory
@@ -481,7 +537,7 @@ def run_batch_pipeline(
         subtitle_lines=options.subtitle_lines
     )
     
-    full_result = run_audio_pipeline(input_paths, output_dir, batch_options)
+    full_result = run_audio_pipeline(input_paths, output_dir, batch_options, status_callback)
     
     results = []
     validated_inputs = validate_pipeline_inputs(input_paths)

@@ -32,6 +32,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         self.assertEqual(args.transcription_preset, "balanced")
         self.assertIsNone(args.language)
         self.assertEqual(args.output_format, "wav")
+        self.assertEqual(args.social_platform, "general")
         self.assertFalse(args.no_overwrite)
         self.assertFalse(args.batch)
 
@@ -53,6 +54,7 @@ class TestRunPipelineCLI(unittest.TestCase):
             "--transcription-preset", "best",
             "--language", "vi",
             "--output-format", "mp3",
+            "--social-platform", "youtube_facebook_x",
             "--no-overwrite",
             "--batch"
         ])
@@ -73,6 +75,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         self.assertEqual(args.transcription_preset, "best")
         self.assertEqual(args.language, "vi")
         self.assertEqual(args.output_format, "mp3")
+        self.assertEqual(args.social_platform, "youtube_facebook_x")
         self.assertTrue(args.no_overwrite)
         self.assertTrue(args.batch)
 
@@ -98,6 +101,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         mock_args.transcription_preset = "fast"
         mock_args.language = "vi"
         mock_args.output_format = "wav"
+        mock_args.social_platform = "podcast_voice"
         mock_args.no_overwrite = False
         mock_args.batch = False
         
@@ -136,6 +140,7 @@ class TestRunPipelineCLI(unittest.TestCase):
         self.assertEqual(opts.silence_preset, "hard")
         self.assertEqual(opts.transcription_preset, "fast")
         self.assertEqual(opts.language, "vi")
+        self.assertEqual(opts.social_platform, "podcast_voice")
         self.assertTrue(opts.overwrite)
         
         # Check success exit

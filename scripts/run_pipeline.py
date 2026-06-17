@@ -155,6 +155,12 @@ def parse_arguments(args_list=None):
         help="Output audio format extension (e.g. wav, mp3)."
     )
     parser.add_argument(
+        "--social-platform",
+        default="general",
+        choices=["general", "youtube_facebook_x", "tiktok_instagram", "podcast_voice"],
+        help="Social platform optimization preset style."
+    )
+    parser.add_argument(
         "--no-overwrite",
         action="store_true",
         help="Do not overwrite existing files (raise error instead)."
@@ -217,6 +223,7 @@ def main():
         enable_volume_leveling=args.volume,
         enable_silence_shortening=args.silence,
         enable_social_optimize=args.social_optimize,
+        social_platform=args.social_platform,
         enable_transcription=args.transcribe,
         enable_subtitle_export=args.subtitles,
         enable_sentence_split=args.split_sentences,
@@ -241,10 +248,13 @@ def main():
     input_paths = [Path(p) for p in args.input]
     output_dir = Path(args.output)
     
+    def cli_status_callback(msg: str):
+        print(f"[STATUS] {msg}", flush=True)
+
     try:
         if args.batch:
             print(f"Starting batch pipeline runner on {len(input_paths)} files...")
-            results = run_batch_pipeline(input_paths, output_dir, options)
+            results = run_batch_pipeline(input_paths, output_dir, options, status_callback=cli_status_callback)
             print("=" * 60)
             print(f"Batch Processing Completed Successfully. Results:")
             for idx, res in enumerate(results, 1):
@@ -252,7 +262,7 @@ def main():
                 print()
         else:
             print("Starting pipeline runner...")
-            result = run_audio_pipeline(input_paths, output_dir, options)
+            result = run_audio_pipeline(input_paths, output_dir, options, status_callback=cli_status_callback)
             print("=" * 60)
             print("Pipeline Completed Successfully. Result:")
             print_result(result)

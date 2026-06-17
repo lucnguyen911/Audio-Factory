@@ -80,7 +80,7 @@ class TestPipeline(unittest.TestCase):
         mock_clean.assert_called_once_with(Path("input.wav"), out_dir / "audio_project" / "work" / "input_cleaned.wav", overwrite=True)
         mock_level.assert_called_once_with(out_dir / "audio_project" / "work" / "input_cleaned.wav", out_dir / "audio_project" / "work" / "input_leveled.wav", unittest.mock.ANY)
         mock_shorten.assert_called_once_with(out_dir / "audio_project" / "work" / "input_leveled.wav", out_dir / "audio_project" / "work" / "input_shortened.wav", unittest.mock.ANY)
-        mock_social.assert_called_once_with(out_dir / "audio_project" / "work" / "input_shortened.wav", out_dir / "audio_project" / "work" / "input_optimized.wav", overwrite=True)
+        mock_social.assert_called_once_with(out_dir / "audio_project" / "work" / "input_shortened.wav", out_dir / "audio_project" / "work" / "input_optimized.wav", platform='general', overwrite=True)
         mock_copy.assert_called_once()
         mock_export_meta.assert_called_once()
 
