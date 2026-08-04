@@ -1,6 +1,23 @@
 PySide6
 faster-whisper
+# CUDA 12 runtime used by CTranslate2 on Windows.  Declaring these explicitly
+# keeps fresh installs on the GPU path instead of silently falling back to CPU.
+nvidia-cublas-cu12==12.9.2.10; platform_system == "Windows"
+nvidia-cudnn-cu12==9.23.2.1; platform_system == "Windows"
+nvidia-cuda-runtime-cu12==12.9.79; platform_system == "Windows"
+nvidia-cuda-nvrtc-cu12==12.9.86; platform_system == "Windows"
 onnxruntime
 numpy
 soundfile
 pytest
+
+# ── Tính năng #5: Dịch phụ đề đa ngôn ngữ ───────────────────────────────────
+openai                  # DeepSeek V3 engine (dùng openai client, base_url override)
+deep_translator         # Google Bypass engine (không cần API key)
+google-generativeai     # Gemini 2.0 Flash engine
+
+# NLLB-200 Local (optional, ~1.2GB model download khi chạy lần đầu):
+# Cài thủ công nếu cần dùng chế độ offline:
+#   pip install torch transformers sentencepiece
+
+pyTelegramBotAPI

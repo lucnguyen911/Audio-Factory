@@ -7,6 +7,12 @@ models/
 dist/
 build/
 *.spec
+!Audio Factory.spec
 *.log
 .env
+config.json
 out/
+obfuscated_dist/
+outputs/
+*.bug.log
+core/security_engine.py

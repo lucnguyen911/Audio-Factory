@@ -144,15 +144,32 @@ def merge_audio_files(
                 )
                 merge_list.append(silence_file)
                 
-        list_file = temp_dir / "concat_list.txt"
-        build_concat_list_file(merge_list, list_file)
-        
         overwrite_flag = "-y" if options.overwrite else "-n"
-        args = [
-            overwrite_flag,
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(list_file)
+        args = [overwrite_flag]
+        for media_path in merge_list:
+            args += ["-i", str(media_path)]
+
+        # Inputs may legitimately be a mix of pcm_f32le (normalised/copy
+        # path) and pcm_s16le (silence-shortened path or inserted gap).  The
+        # concat demuxer assumes identical codecs and can misread such a list.
+        # Decode and normalise every stream in one filter graph before joining.
+        channel_layout = "mono" if options.channels == 1 else "stereo"
+        normalizers = [
+            (
+                f"[{index}:a]aresample={options.sample_rate},"
+                f"aformat=sample_fmts=fltp:sample_rates={options.sample_rate}:"
+                f"channel_layouts={channel_layout}[a{index}]"
+            )
+            for index in range(len(merge_list))
+        ]
+        concat_inputs = "".join(f"[a{index}]" for index in range(len(merge_list)))
+        filter_complex = ";".join(
+            normalizers
+            + [f"{concat_inputs}concat=n={len(merge_list)}:v=0:a=1[merged_audio]"]
+        )
+        args += [
+            "-filter_complex", filter_complex,
+            "-map", "[merged_audio]",
         ] + codec_args + [
             "-ar", str(options.sample_rate),
             "-ac", str(options.channels),

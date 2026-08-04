@@ -143,3 +143,35 @@ def convert_to_work_wav(
         return output_path_obj
     except FFmpegError as e:
         raise MediaImportError(f"Failed to convert media file to WAV: {e}") from e
+
+
+def normalize_to_pcm(
+    input_path: Path,
+    output_path: Path,
+    sample_rate: int = 48000,
+    channels: int = 2,
+    overwrite: bool = True,
+) -> Path:
+    """
+    Normalize input media to WAV PCM format (default f32le, 48kHz, stereo) for internal DSP processing.
+    """
+    input_path_obj = validate_input_file(input_path)
+    output_path_obj = Path(output_path)
+    output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    overwrite_flag = "-y" if overwrite else "-n"
+    args = [
+        overwrite_flag,
+        "-i", str(input_path_obj),
+        "-ar", str(sample_rate),
+        "-ac", str(channels),
+        "-c:a", "pcm_f32le",
+        str(output_path_obj)
+    ]
+
+    try:
+        run_ffmpeg(args)
+        return output_path_obj
+    except Exception as e:
+        raise MediaImportError(f"Failed to normalize media file to PCM: {e}") from e
+

@@ -97,7 +97,12 @@ def normalize_segments(segments: List[Union[TranscriptSegment, Dict[str, Any]]])
     return normalized
 
 
-def export_srt(segments: List[Union[TranscriptSegment, Dict[str, Any]]], output_path: Path) -> Path:
+def export_srt(
+    segments: List[Union[TranscriptSegment, Dict[str, Any]]],
+    output_path: Path,
+    strict: bool = False,
+    **kwargs
+) -> Path:
     """Export segments to a SubRip (.srt) subtitle file."""
     normalized = normalize_segments(segments)
     output_path_obj = Path(output_path)
