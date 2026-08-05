@@ -192,11 +192,15 @@ try:
         verify_api_keys,
         TranslationError,
         TranslationQuotaError,
-        ENGINES as TRANSLATION_ENGINES,
         TARGET_LANGUAGES as TRANSLATION_TARGET_LANGUAGES,
     )
+    TRANSLATION_ENGINES = {
+        "Google Bypass (Online Free)": "google",
+        "Gemini Flash (Tự động xoay Key & Model)": "gemini",
+        "DeepSeek V4 Pro (API)": "deepseek",
+    }
     _TRANSLATION_AVAILABLE = True
-except Exception:
+except Exception as e:
     _TRANSLATION_AVAILABLE = False
     def translate_srt_file(*args, **kwargs):  # type: ignore[misc]
         raise RuntimeError("Translation backend not available")
@@ -1251,7 +1255,7 @@ class MainWindow(QMainWindow):
             "1 dòng (Gọn – 1 hàng chữ mỗi đoạn)",
             "2 dòng (2 hàng chữ mỗi đoạn)",
         ])
-        self.combo_lines.setCurrentIndex(0)  # Mặc định: 1 dòng (shorts/tiktok)
+        self.combo_lines.setCurrentIndex(1)  # Mặc định: 2 dòng (2 hàng chữ mỗi đoạn)
 
         self.w_lang = create_labeled_combo("Ngôn ngữ",             self.combo_lang)
         self.w_model = create_labeled_combo("Mô hình Whisper",       self.combo_model)
@@ -2454,31 +2458,38 @@ class MainWindow(QMainWindow):
         self.btn_check_keys.setText(btn_text)
         self.btn_check_keys.setEnabled(True)
 
-        valid = result.get("valid", 0)
+        valid_count = result.get("valid_count", 1 if result.get("valid") else 0)
         total = result.get("total", 0)
         details = result.get("details", [])
 
         idx = self.combo_translate_engine.currentIndex()
         engine_key = self.combo_translate_engine.itemData(idx) or "google"
-        engine_name = "Gemini" if engine_key.startswith("gemini") else "DeepSeek"
+        engine_name = "Gemini" if "gemini" in str(engine_key).lower() else "DeepSeek"
 
-        for line in details:
-            if "✅" in line:
-                color = "#10d98c"
-            elif "⚠️" in line:
-                color = "#FFB347"
+        for item in details:
+            if isinstance(item, dict):
+                is_valid = item.get("valid", False)
+                key_name = item.get("key", "")
+                err_msg = item.get("error", "")
+                if is_valid:
+                    line_str = f"✅ Key {key_name}: Hoạt động tốt (Active)"
+                    color = "#10d98c"
+                else:
+                    line_str = f"❌ Key {key_name}: Lỗi ({err_msg})"
+                    color = "#FF6B6B"
             else:
-                color = "#FF6B6B"
-            self.txt_logs.append(f'<span style="color:{color}; font-weight: 500;">  • {line}</span>')
+                line_str = str(item)
+                color = "#10d98c" if "✅" in line_str else ("#FFB347" if "⚠️" in line_str else "#FF6B6B")
+            self.txt_logs.append(f'<span style="color:{color}; font-weight: 500;">  • {line_str}</span>')
 
         self.txt_logs.verticalScrollBar().setValue(
             self.txt_logs.verticalScrollBar().maximum()
         )
 
         status_msg = (
-            f"✅ {valid}/{total} Key {engine_name} hoạt động tốt."
+            f"✅ {valid_count}/{total} Key {engine_name} hoạt động tốt."
             if lang == "vi" else
-            f"✅ {valid}/{total} {engine_name} API Keys working."
+            f"✅ {valid_count}/{total} {engine_name} API Keys working."
         )
         self.lbl_status.setText(status_msg)
         self.txt_logs.append(

@@ -43,6 +43,12 @@ TRANSLATOR_BUILD_ID = "2026-07-31-master-refactor-v7.0.0"
 
 LATIN_LANG_CODES = {"vi", "en", "es", "fr", "de", "pt", "ru"}
 
+ENGINES: Dict[str, str] = {
+    "Google Bypass (Online Free)": "google",
+    "Gemini Flash (Tự động xoay Key & Model)": "gemini",
+    "DeepSeek V4 Pro (API)": "deepseek",
+}
+
 TARGET_LANGUAGES: Dict[str, str] = {
     "vi": "Vietnamese", "en": "English", "zh": "Simplified Chinese",
     "ja": "Japanese", "ko": "Korean", "es": "Spanish", "fr": "French",
@@ -1932,9 +1938,12 @@ def translate_srt_file(
 
 def verify_api_keys(api_keys_str: str, model_name: str = PRIMARY_MODEL_A) -> Dict[str, Any]:
     """Verify list of user API keys against Gemini model."""
+    if not model_name or model_name.lower() in ("gemini", "deepseek", "google"):
+        model_name = PRIMARY_MODEL_A
+
     keys = [k.strip() for k in api_keys_str.replace(",", "\n").split("\n") if k.strip()]
     if not keys:
-        return {"valid": False, "message": "No API keys provided."}
+        return {"valid": False, "valid_count": 0, "total": 0, "details": ["Không có API Key nào được nhập."]}
 
     results = []
     valid_count = 0

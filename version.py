@@ -3,7 +3,7 @@
 APP_ID = "audio_factory"
 APP_NAME = "Audio Factory"
 PRODUCT_NAME = "Audio Factory Premium"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.3"
 EXE_NAME = "Audio Factory.exe"
 APP_DATA_DIRNAME = "AudioFactory"
 

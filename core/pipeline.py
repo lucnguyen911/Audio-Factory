@@ -1016,12 +1016,12 @@ def run_audio_pipeline(
             update_status("Waiting for TranslationCoordinator to finalize all background translation jobs...")
             if coordinator_thread and coordinator_thread.is_alive():
                 coordinator_thread.join()
-            try:
-                report_file = final_project_dir / "api_key_usage_report.txt"
-                coordinator.export_key_usage_report(report_file)
-                update_status(f"Exported API Key usage audit report to {report_file.name}")
-            except Exception as r_err:
-                logger.warning("Failed to export API key usage report: %s", r_err)
+            # Disabled exporting API key usage report file to keep output directory clean
+            # try:
+            #     report_file = final_project_dir / "api_key_usage_report.txt"
+            #     coordinator.export_key_usage_report(report_file)
+            # except Exception as r_err:
+            #     logger.warning("Failed to export API key usage report: %s", r_err)
             coordinator.shutdown()
 
     finally:
@@ -1040,9 +1040,9 @@ def run_audio_pipeline(
         except Exception as e:
             logger.warning("Failed to clear Whisper model cache: %s", e)
 
-        # Cleanup any leftover report JSON files from output directory
+        # Cleanup any leftover report files from output directory (only keep audio & srt/vtt)
         try:
-            for json_pattern in ["*_report*.json", "*_segments*.json", "*_candidates*.json", "*_trace*.json", "merge_dedup_report.json"]:
+            for json_pattern in ["*_report*.json", "*_segments*.json", "*_candidates*.json", "*_trace*.json", "merge_dedup_report.json", "*report*.txt", "api_key_usage_report.txt"]:
                 for json_file in final_project_dir.glob(json_pattern):
                     if json_file.exists():
                         json_file.unlink()

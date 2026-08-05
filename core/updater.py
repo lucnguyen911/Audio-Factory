@@ -17,8 +17,19 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from PySide6.QtCore import QEventLoop, QThread, Signal
-from PySide6.QtWidgets import QMessageBox, QProgressDialog
+from PySide6.QtCore import QEventLoop, QThread, Signal, Qt
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressDialog,
+    QPushButton,
+    QStyle,
+    QVBoxLayout,
+)
 
 from core.dpapi_storage import load_protected_json, save_protected_json
 from version import APP_DATA_DIRNAME, APP_ID, APP_VERSION
@@ -184,7 +195,7 @@ class DownloadWorker(QThread):
             first_bytes = b""
             with response, open(part, "wb") as stream:
                 while not self._is_cancelled:
-                    chunk = response.read(256 * 1024)
+                    chunk = response.read(1024 * 1024)
                     if not chunk:
                         break
                     if not first_bytes:
@@ -232,27 +243,214 @@ def _download_destination(version: str) -> Path:
     return _UPDATE_DIR / f"Audio_Factory_Setup_{version}.exe"
 
 
+class UpdateDialog(QDialog):
+    def __init__(self, info: Dict[str, Any], current_version: str, parent=None):
+        super().__init__(parent)
+        is_forced = info.get("enforcement") == "forced" or info.get("is_forced", False)
+        title = "Cập nhật bắt buộc!" if is_forced else "Phiên bản mới khả dụng!"
+        self.setWindowTitle(title)
+        self.setMinimumWidth(440)
+        self.setMaximumWidth(500)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f8f9fa;
+                color: #212529;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 13px;
+            }
+            QLabel {
+                color: #212529;
+                background: transparent;
+                font-size: 13px;
+            }
+            #divider {
+                background-color: #dee2e6;
+                max-height: 1px;
+                min-height: 1px;
+                border: none;
+            }
+            QPushButton {
+                background-color: #ffffff;
+                color: #212529;
+                border: 1px solid #ced4da;
+                border-radius: 6px;
+                padding: 6px 18px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+                border-color: #adb5bd;
+            }
+            QPushButton:pressed {
+                background-color: #dee2e6;
+            }
+            QPushButton:focus {
+                outline: none;
+            }
+        """)
+
+        if parent and hasattr(parent, "windowIcon") and not parent.windowIcon().isNull():
+            self.setWindowIcon(parent.windowIcon())
+        else:
+            icon_path = Path(__file__).resolve().parent.parent / "assets" / "logo.ico"
+            if icon_path.exists():
+                self.setWindowIcon(QIcon(str(icon_path)))
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(14)
+
+        # Top Section: Icon on left, Content on right
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(14)
+
+        # Icon Label (Blue Info Circle)
+        icon_label = QLabel()
+        std_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
+        icon_label.setPixmap(std_icon.pixmap(44, 44))
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        top_layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignTop)
+
+        # Content Layout
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+
+        lbl_curr = QLabel(f"Phiên bản hiện tại: &nbsp;<b>v{current_version}</b>")
+        lbl_new = QLabel(f"Phiên bản mới: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>v{info['latest_version']}</b>")
+        content_layout.addWidget(lbl_curr)
+        content_layout.addWidget(lbl_new)
+
+        line1 = QFrame()
+        line1.setObjectName("divider")
+        line1.setFrameShape(QFrame.Shape.HLine)
+        line1.setFrameShadow(QFrame.Shadow.Sunken)
+        content_layout.addWidget(line1)
+
+        lbl_log_title = QLabel("<b>Có gì mới:</b>")
+        content_layout.addWidget(lbl_log_title)
+
+        changelog_text = info.get("changelog", "Bản cập nhật mới.")
+        lbl_changelog = QLabel(changelog_text)
+        lbl_changelog.setWordWrap(True)
+        content_layout.addWidget(lbl_changelog)
+
+        line2 = QFrame()
+        line2.setObjectName("divider")
+        line2.setFrameShape(QFrame.Shape.HLine)
+        line2.setFrameShadow(QFrame.Shadow.Sunken)
+        content_layout.addWidget(line2)
+
+        if is_forced:
+            lbl_notice = QLabel("⚠️ <b>Đây là bản cập nhật bắt buộc. Bạn cần cập nhật để tiếp tục sử dụng.</b>")
+        else:
+            lbl_notice = QLabel("Bạn có muốn cập nhật ngay bây giờ không?")
+        lbl_notice.setWordWrap(True)
+        content_layout.addWidget(lbl_notice)
+
+        top_layout.addLayout(content_layout, 1)
+        main_layout.addLayout(top_layout)
+
+        # Button Row
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 6, 0, 0)
+        btn_layout.setSpacing(10)
+        btn_layout.addStretch()
+
+        self.btn_ok = QPushButton("Cập nhật ngay")
+        self.btn_ok.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ok.setMinimumWidth(110)
+
+        if is_forced:
+            self.btn_cancel = QPushButton("Thoát ứng dụng")
+        else:
+            self.btn_cancel = QPushButton("Bỏ qua")
+        self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_cancel.setMinimumWidth(110)
+
+        self.btn_ok.clicked.connect(self.accept)
+        self.btn_cancel.clicked.connect(self.reject)
+
+        btn_layout.addWidget(self.btn_ok)
+        btn_layout.addWidget(self.btn_cancel)
+        main_layout.addLayout(btn_layout)
+
+
+def show_update_dialog(info: Dict[str, Any], current_version: str, parent_widget=None) -> bool:
+    dialog = UpdateDialog(info, current_version, parent_widget)
+    return dialog.exec() == QDialog.DialogCode.Accepted
+
+
 def run_update_check(parent_widget=None) -> bool:
     """Run after successful license verification; return True when app must exit."""
     info = check_for_updates()
     if not info:
         return False
-    forced = info["enforcement"] == "forced"
-    buttons = QMessageBox.Yes | (QMessageBox.No if not forced else QMessageBox.Close)
-    answer = QMessageBox.question(
-        parent_widget,
-        "Cập nhật Audio Factory",
-        f"Có phiên bản {info['latest_version']}.\n\n{info.get('changelog', '')}\n\n"
-        + ("Bản cập nhật này là bắt buộc." if forced else "Bạn có muốn cập nhật ngay?"),
-        buttons,
-        QMessageBox.Yes,
-    )
-    if answer != QMessageBox.Yes:
+    forced = info.get("enforcement") == "forced" or info.get("is_forced", False)
+    
+    user_accepted = show_update_dialog(info, CURRENT_VERSION, parent_widget)
+    if not user_accepted:
         return forced
 
     destination = _download_destination(info["latest_version"])
-    progress = QProgressDialog("Đang tải bản cập nhật đã xác minh...", "Hủy", 0, 100, parent_widget)
+    progress = QProgressDialog("Đang tải bản cập nhật...", "Hủy", 0, 100, parent_widget)
+    progress.setWindowTitle("Tải cập nhật")
     progress.setMinimumDuration(0)
+
+    if parent_widget and hasattr(parent_widget, "windowIcon") and not parent_widget.windowIcon().isNull():
+        progress.setWindowIcon(parent_widget.windowIcon())
+    else:
+        icon_path = Path(__file__).resolve().parent.parent / "assets" / "logo.ico"
+        if icon_path.exists():
+            progress.setWindowIcon(QIcon(str(icon_path)))
+
+    progress.setStyleSheet("""
+        QProgressDialog {
+            background-color: #f8f9fa;
+            color: #212529;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 13px;
+        }
+        QLabel {
+            color: #212529;
+            background: transparent;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        QProgressBar {
+            background-color: #e9ecef;
+            color: #212529;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            height: 24px;
+        }
+        QProgressBar::chunk {
+            background-color: #0d6efd;
+            border-radius: 5px;
+        }
+        QPushButton {
+            background-color: #ffffff;
+            color: #212529;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            padding: 5px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 80px;
+        }
+        QPushButton:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+        }
+        QPushButton:pressed {
+            background-color: #dee2e6;
+        }
+    """)
     worker = DownloadWorker(
         info["download_url"],
         str(destination),
