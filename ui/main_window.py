@@ -237,8 +237,16 @@ class KeyValidationWorker(QThread):
         self.engine = engine
 
     def run(self) -> None:
-        result = verify_api_keys(self.raw_keys, self.engine)
-        self.finished_signal.emit(result)
+        try:
+            result = verify_api_keys(self.raw_keys, self.engine)
+            self.finished_signal.emit(result)
+        except Exception as e:
+            self.finished_signal.emit({
+                "valid": False,
+                "valid_count": 0,
+                "total": 1,
+                "details": [f"Lỗi kiểm tra key: {str(e)}"]
+            })
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1951,14 +1951,23 @@ def verify_api_keys(api_keys_str: str, model_name: str = PRIMARY_MODEL_A) -> Dic
     for key in keys:
         try:
             model = _make_gemini_model(key, model_name, "Test prompt")
-            resp = model.generate_content("Hello")
+            resp = model.generate_content("Ping", request_options={"timeout": 10.0})
             if resp and resp.text:
                 valid_count += 1
                 results.append({"key": mask_key(key), "valid": True})
             else:
-                results.append({"key": mask_key(key), "valid": False, "error": "Empty response"})
+                results.append({"key": mask_key(key), "valid": False, "error": "Rỗng (Empty response)"})
         except Exception as e:
-            results.append({"key": mask_key(key), "valid": False, "error": str(e)})
+            err_str = str(e)
+            if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
+                err_msg = "API Key không hợp lệ"
+            elif "QUOTA_EXCEEDED" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                err_msg = "Hết hạn ngạch (Quota Exceeded)"
+            elif "timeout" in err_str.lower():
+                err_msg = "Hết thời gian chờ kết nối (Timeout 10s)"
+            else:
+                err_msg = err_str.split("\n")[0]
+            results.append({"key": mask_key(key), "valid": False, "error": err_msg})
 
     return {
         "valid": valid_count > 0,
