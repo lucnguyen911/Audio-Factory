@@ -55,6 +55,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "btn_browse_output": "📁  Chọn thư mục",
         "lbl_project_name": "Tên dự án:",
         "lbl_output_format": "Định dạng xuất:",
+        "lbl_audio_speed": "Tốc độ:",
         
         # Feature cards
         "card_merge": "Gộp Audio",
@@ -210,6 +211,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "btn_browse_output": "📁  Browse",
         "lbl_project_name": "Project Name:",
         "lbl_output_format": "Export Format:",
+        "lbl_audio_speed": "Speed:",
         
         # Feature cards
         "card_merge": "Merge Audio",

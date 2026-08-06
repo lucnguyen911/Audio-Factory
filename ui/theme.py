@@ -8,6 +8,7 @@ Hỗ trợ Dark Mode và Light Mode, mặc định là Light Mode.
 from pathlib import Path as _Path
 
 _ASSETS_DIR = _Path(__file__).parent.parent / "assets"
+_SVG_ARROW_UP_URL      = (_ASSETS_DIR / "arrow_up.svg").as_posix()
 _SVG_ARROW_DOWN_URL    = (_ASSETS_DIR / "arrow_down.svg").as_posix()
 _SVG_ARROW_DOWN_ON_URL = (_ASSETS_DIR / "arrow_down_on.svg").as_posix()
 _SVG_TOGGLE_OFF_URL    = (_ASSETS_DIR / "toggle_off.svg").as_posix()
@@ -169,6 +170,61 @@ QLabel#ProgressValueGreen {{ color: {T["TEXT_GREEN"]}; font-size: 12px; font-wei
 QLineEdit, QComboBox, QPlainTextEdit {{ background-color: {T["BG_FIELD"]}; border: 1px solid {T["BORDER_FIELD"]}; border-radius: 6px; padding: 6px 10px; color: {T["TEXT_PRIMARY"]}; min-height: 24px; }}
 QLineEdit, QPushButton#btn_browse {{ height: 32px; min-height: 32px; max-height: 32px; }}
 QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{ border-color: {T["BORDER_FOCUS"]}; }}
+
+/* SPINBOX (SEAMLESS UNIFIED FIELD) */
+QDoubleSpinBox, QSpinBox {{
+    background-color: {T["BG_FIELD"]};
+    border: 1px solid {T["BORDER_FIELD"]};
+    border-radius: 6px;
+    padding-left: 10px;
+    padding-right: 26px;
+    color: {T["TEXT_PRIMARY"]};
+    font-size: 13px;
+    font-weight: 500;
+    height: 32px;
+    min-height: 32px;
+    max-height: 32px;
+}}
+QDoubleSpinBox:focus, QSpinBox:focus {{
+    border-color: {T["BORDER_FOCUS"]};
+}}
+QDoubleSpinBox::up-button, QSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 24px;
+    height: 17px;
+    top: 0px;
+    border-top-right-radius: 5px;
+    border-left: 1px solid {T["BORDER_FIELD"]};
+    border-bottom: 1px solid {T["BORDER_FIELD"]};
+    background: transparent;
+}}
+QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover {{
+    background-color: {T["BTN_HOVER"]};
+}}
+QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {{
+    image: url({_SVG_ARROW_UP_URL});
+    width: 8px;
+    height: 5px;
+}}
+QDoubleSpinBox::down-button, QSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 24px;
+    height: 17px;
+    bottom: 0px;
+    border-bottom-right-radius: 5px;
+    border-left: 1px solid {T["BORDER_FIELD"]};
+    background: transparent;
+}}
+QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover {{
+    background-color: {T["BTN_HOVER"]};
+}}
+QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {{
+    image: url({_SVG_ARROW_DOWN_URL});
+    width: 8px;
+    height: 5px;
+}}
 QComboBox {{ padding-right: 28px; }}
 QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 24px; border-left: none; background: transparent; }}
 QComboBox::down-arrow {{ image: url({_SVG_ARROW_DOWN_URL}); width: 10px; height: 6px; }}

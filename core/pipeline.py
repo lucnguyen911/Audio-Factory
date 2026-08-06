@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any, Optional
 
 from core.ffmpeg_runner import run_ffmpeg, FFmpegError
-from core.importer import validate_input_file, normalize_to_pcm, get_duration_seconds, MediaImportError
+from core.importer import validate_input_file, normalize_to_pcm, adjust_audio_speed, get_duration_seconds, MediaImportError
 from core.merger import merge_audio_files, MergeOptions, AudioMergeError
 from core.volume_leveler import level_volume, apply_delivery_limiter, VolumeLevelingOptions, VolumeLevelingError
 from core.silence_shortener import shorten_silence, SilenceShortenerOptions, options_from_preset, SilenceShortenerError
@@ -64,6 +64,7 @@ class PipelineOptions:
     enable_transcription: bool = False
     enable_subtitle_export: bool = False
     output_format: str = "wav"
+    audio_speed: float = 1.0
     project_name: str = "audio_project"
     overwrite: bool = True
     merge_gap_seconds: float = 0.0
@@ -482,6 +483,16 @@ def run_audio_pipeline(
                     except MediaImportError as e:
                         raise PipelineError(f"Failed to normalize '{input_path}': {e}") from e
 
+                    # A.0 Audio Speed Adjustment (if speed != 1.0)
+                    if abs(options.audio_speed - 1.0) > 0.001:
+                        update_status(f"[{input_path.name}] Adjusting audio speed to {options.audio_speed:.2f}x...")
+                        speed_file = dirs["work"] / f"{idx:03d}_{input_path.stem}_speed.wav"
+                        try:
+                            current_audio = adjust_audio_speed(current_audio, speed_file, options.audio_speed)
+                            tracker.update_op_complete(f"[{input_path.name}] Speed adjusted ({options.audio_speed:.2f}x)")
+                        except MediaImportError as e:
+                            raise PipelineError(f"Failed in audio speed adjustment on '{input_path}': {e}") from e
+
                     # A. Voice Cleanup (per-file)
                     if options.enable_voice_cleanup:
                         update_status(f"[{input_path.name}] Applying voice cleanup...")
@@ -538,6 +549,16 @@ def run_audio_pipeline(
                     tracker.update_op_complete(f"[{input_path.name}] Normalized")
                 except MediaImportError as e:
                     raise PipelineError(f"Failed to normalize '{input_path}': {e}") from e
+
+                # Audio Speed Adjustment (if speed != 1.0)
+                if abs(options.audio_speed - 1.0) > 0.001:
+                    update_status(f"Adjusting audio speed to {options.audio_speed:.2f}x...")
+                    speed_file = dirs["work"] / f"001_{input_path.stem}_speed.wav"
+                    try:
+                        current_audio = adjust_audio_speed(current_audio, speed_file, options.audio_speed)
+                        tracker.update_op_complete(f"[{input_path.name}] Speed adjusted ({options.audio_speed:.2f}x)")
+                    except MediaImportError as e:
+                        raise PipelineError(f"Failed in audio speed adjustment: {e}") from e
 
                 # A. Voice Cleanup
                 if options.enable_voice_cleanup:
@@ -807,6 +828,16 @@ def run_audio_pipeline(
                     tracker.update_op_complete(f"[{input_path.name}] Normalized")
                 except MediaImportError as e:
                     raise PipelineError(f"Failed to normalize '{input_path}': {e}") from e
+
+                # ── Step 1.5: Audio Speed Adjustment (if speed != 1.0) ───
+                if abs(options.audio_speed - 1.0) > 0.001:
+                    update_status(f"[{input_path.name}] Adjusting audio speed to {options.audio_speed:.2f}x...")
+                    speed_file = dirs["work"] / f"{idx:03d}_{input_path.stem}_speed.wav"
+                    try:
+                        current_audio = adjust_audio_speed(current_audio, speed_file, options.audio_speed)
+                        tracker.update_op_complete(f"[{input_path.name}] Speed adjusted ({options.audio_speed:.2f}x)")
+                    except MediaImportError as e:
+                        raise PipelineError(f"Failed in audio speed adjustment on '{input_path}': {e}") from e
 
                 # ── Step 2: Voice Cleanup ────────────────────────────────
                 if options.enable_voice_cleanup:

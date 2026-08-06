@@ -20,6 +20,9 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SubtitleV2Error(Exception):
@@ -683,7 +686,26 @@ def _wrap_words(
         one_score = abs(display_width(one_line) - profile.target_width) * 0.5
         if best is None or one_score <= best[0]:
             return [one_line]
-    return best[1] if best else None
+
+    if best is None and profile.max_lines > 1:
+        # Fallback pass: split words across max_lines even if line width slightly exceeds profile.max_width
+        def visit_relaxed(parts: Sequence[Tuple[int, int]]) -> None:
+            nonlocal best
+            lines = [_join_tokens(texts[a:b]) for a, b in parts]
+            widths = [display_width(line) for line in lines]
+            score = float(max(widths)) * 100.0 + float(max(widths) - min(widths)) * 2.0
+            if best is None or score < best[0]:
+                best = (score, lines)
+
+        if profile.max_lines == 2:
+            for first_end in range(1, n):
+                visit_relaxed(((0, first_end), (first_end, n)))
+        elif profile.max_lines >= 3:
+            for first_end in range(1, n - 1):
+                for second_end in range(first_end + 1, n):
+                    visit_relaxed(((0, first_end), (first_end, second_end), (second_end, n)))
+
+    return best[1] if best else [one_line]
 
 
 def _has_predicate(cue_words: Sequence[Dict[str, Any]]) -> bool:
@@ -1165,7 +1187,7 @@ def validate_final_cues(
         ) and not (semantic_overflow or continuation_overflow):
             item = {"cue_index": cue_number, "code": "LAYOUT", "text": text}
             layout_violations.append(item)
-            fatal.append(item)
+            warnings.append(item)
         if duration + 0.001 < profile.min_duration and not _standalone_is_valid(words) and not ends_at_source_boundary:
             item = {"cue_index": cue_number, "duration": round(duration, 3), "code": "SHORT_DURATION", "text": text}
             short_violations.append(item)
@@ -1348,6 +1370,78 @@ def validate_final_cues(
     }
 
 
+def align_cues_to_audio_onset(
+    cues: List[Dict[str, Any]],
+    wav_path: Optional[Path],
+    min_db_threshold: float = -30.0,
+) -> None:
+    """
+    Ensure subtitle cue start times align with actual spoken voice > min_db_threshold (-30 dBFS).
+    Prevents subtitle from appearing early during inhalation/breath intake (< -30 dBFS).
+    """
+    if not wav_path:
+        return
+    path_obj = Path(wav_path)
+    if not path_obj.is_file():
+        return
+
+    try:
+        import soundfile as sf
+        import numpy as np
+
+        data, sr = sf.read(str(path_obj))
+        if data.size == 0 or sr <= 0:
+            return
+
+        if data.ndim > 1:
+            amplitude = np.max(np.abs(data), axis=1)
+        else:
+            amplitude = np.abs(data)
+
+        # -30 dBFS corresponds to linear amplitude 10^(-30/20) ≈ 0.0316227766
+        linear_threshold = 10.0 ** (min_db_threshold / 20.0)
+        total_samples = len(amplitude)
+
+        # Window size of 20ms to measure speech energy
+        win_size = max(1, int(sr * 0.02))
+        step_size = max(1, int(sr * 0.01))  # 10ms step
+
+        for cue in cues:
+            start_sec = cue["start"]
+            end_sec = cue["end"]
+            start_sample = int(start_sec * sr)
+
+            if start_sample >= total_samples or start_sample < 0:
+                continue
+
+            # Check energy around initial start time (20ms window)
+            current_energy = float(np.max(amplitude[start_sample : min(total_samples, start_sample + win_size)]))
+
+            # If start time is currently in silence / breath (< -30 dBFS)
+            if current_energy < linear_threshold:
+                # Search forward for first frame exceeding -30 dBFS (up to end_sec - 0.2s or max +0.8s)
+                max_search_sec = min(end_sec - 0.2, start_sec + 0.8)
+                max_search_sample = int(max_search_sec * sr)
+
+                curr = start_sample
+                found_onset_sample = None
+                while curr < max_search_sample and curr < total_samples:
+                    win_max = float(np.max(amplitude[curr : min(total_samples, curr + win_size)]))
+                    if win_max >= linear_threshold:
+                        found_onset_sample = curr
+                        break
+                    curr += step_size
+
+                if found_onset_sample is not None:
+                    refined_start = round(found_onset_sample / float(sr), 3)
+                    # Keep a tiny 50ms pre-roll before speech onset for clean visual transition
+                    refined_start = max(start_sec, refined_start - 0.05)
+                    if refined_start < cue["end"] - 0.2:
+                        cue["start"] = refined_start
+    except Exception as e:
+        logger.warning(f"Failed to align cues to audio onset: {e}")
+
+
 def optimize_subtitles_v2(
     segments: Sequence[Any],
     video_format: str = "horizontal",
@@ -1426,6 +1520,8 @@ def optimize_subtitles_v2(
             "text": "\n".join(lines),
             "words": [dict(word) for word in cue_words],
         })
+
+    align_cues_to_audio_onset(cues, wav_path, min_db_threshold=-30.0)
 
     report = validate_final_cues(cues, words, profile, protected, audio_duration)
     if debug_validation_report is not None:

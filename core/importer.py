@@ -175,3 +175,40 @@ def normalize_to_pcm(
     except Exception as e:
         raise MediaImportError(f"Failed to normalize media file to PCM: {e}") from e
 
+
+def adjust_audio_speed(input_path: Path, output_path: Path, speed: float) -> Path:
+    """
+    Adjust audio playback speed using FFmpeg's atempo audio filter while preserving pitch.
+    speed: float (e.g. 0.8 to slow down by 20%, 1.25 to speed up by 25%).
+    """
+    if abs(speed - 1.0) < 0.001:
+        return input_path
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    filters = []
+    current_speed = speed
+    while current_speed < 0.5:
+        filters.append("atempo=0.5")
+        current_speed /= 0.5
+    while current_speed > 2.0:
+        filters.append("atempo=2.0")
+        current_speed /= 2.0
+    filters.append(f"atempo={current_speed:.4f}")
+    filter_chain = ",".join(filters)
+
+    args = [
+        "-y",
+        "-i", str(input_path),
+        "-filter:a", filter_chain,
+        "-c:a", "pcm_s16le",
+        "-ar", "48000",
+        "-ac", "2",
+        str(output_path),
+    ]
+    try:
+        run_ffmpeg(args)
+    except FFmpegError as e:
+        raise MediaImportError(f"Failed to adjust audio speed to {speed}x: {e}") from e
+
+    return output_path

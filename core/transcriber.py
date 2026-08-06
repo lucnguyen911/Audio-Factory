@@ -76,11 +76,11 @@ def detect_best_device() -> str:
 
 
 DEFAULT_VAD_PARAMETERS: Dict[str, Any] = {
-    "threshold": 0.35,
+    "threshold": 0.45,
     "min_speech_duration_ms": 250,
     "max_speech_duration_s": float("inf"),
     "min_silence_duration_ms": 1500,
-    "speech_pad_ms": 500,
+    "speech_pad_ms": 150,
 }
 
 

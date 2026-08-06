@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QComboBox,
+    QDoubleSpinBox,
     QTextEdit,
     QProgressBar,
     QFileDialog,
@@ -151,6 +152,7 @@ except Exception:
             "btn_browse_output": "📁  Chọn thư mục",
             "lbl_project_name": "Tên dự án:",
             "lbl_output_format": "Định dạng xuất:",
+            "lbl_audio_speed": "Tốc độ:",
             "card_merge": "Gộp Audio",
             "card_voice": "Lọc Giọng Nói",
             "card_volume": "Cân Bằng Âm Lượng",
@@ -1099,6 +1101,33 @@ class MainWindow(QMainWindow):
         row3.addWidget(self.combo_out_format, 1)
 
         v.addLayout(row3)
+
+        # ── Hàng 4: Tốc độ âm thanh ──────────────────────────────────────
+        row4 = QHBoxLayout()
+        row4.setContentsMargins(0, 0, 0, 0)
+        row4.setSpacing(8)
+        row4.setAlignment(Qt.AlignVCenter)
+
+        self.lbl_audio_speed = QLabel("Tốc độ:")
+        self.lbl_audio_speed.setObjectName("FieldLabel")
+        self.lbl_audio_speed.setFixedWidth(LABEL_W)
+        self.lbl_audio_speed.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        row4.addWidget(self.lbl_audio_speed)
+
+        self.spin_audio_speed = QDoubleSpinBox()
+        self.spin_audio_speed.setObjectName("InputField")
+        self.spin_audio_speed.setRange(0.25, 3.00)
+        self.spin_audio_speed.setSingleStep(0.05)
+        self.spin_audio_speed.setValue(1.00)
+        self.spin_audio_speed.setDecimals(2)
+        self.spin_audio_speed.setSuffix(" x")
+        self.spin_audio_speed.setToolTip("Điều chỉnh tốc độ âm thanh (1.0 = Tốc độ gốc, 0.8 = Giảm 20% tốc độ, 1.2 = Tăng 20% tốc độ)")
+        self.spin_audio_speed.setFixedHeight(32)
+        self.spin_audio_speed.setFixedWidth(110)
+        row4.addWidget(self.spin_audio_speed)
+        row4.addStretch()
+
+        v.addLayout(row4)
         v.addStretch()
         self.panel_output.content_layout.addLayout(v)
 
@@ -1957,6 +1986,7 @@ class MainWindow(QMainWindow):
         options.enable_social_optimize     = True
         options.social_platform             = "social_safe"
         options.output_format = self.output_format
+        options.audio_speed = float(self.spin_audio_speed.value())
         options.enable_transcription  = self.switch_auto_sub.isChecked()
         options.enable_subtitle_export = self.switch_auto_sub.isChecked()
         if options.enable_transcription:
@@ -2582,6 +2612,14 @@ class MainWindow(QMainWindow):
             if trans_enabled:
                 self.switch_translate.setChecked(True)
 
+            # Restore audio speed
+            saved_speed = cfg.get("audio_speed", 1.0)
+            try:
+                self.spin_audio_speed.setValue(float(saved_speed))
+            except Exception:
+                self.spin_audio_speed.setValue(1.0)
+            self.spin_audio_speed.valueChanged.connect(self._save_audio_speed)
+
             # Cập nhật UX state theo engine đã restore
             self._on_engine_changed(self.combo_translate_engine.currentIndex())
 
@@ -2594,6 +2632,14 @@ class MainWindow(QMainWindow):
             import traceback
             print(f"Error in _load_translation_config: {e}")
             traceback.print_exc()
+
+    def _save_audio_speed(self) -> None:
+        """Auto-save tốc độ âm thanh khi thay đổi."""
+        try:
+            val = float(self.spin_audio_speed.value())
+            save_config({"audio_speed": val})
+        except Exception:
+            pass
 
     # Kết nối target lang để auto-save
     def _save_target_lang(self) -> None:
@@ -2965,6 +3011,8 @@ del "%~f0"
                 self.lbl_project_name.setText(get_txt("lbl_project_name"))
             if hasattr(self, "lbl_output_format") and self.lbl_output_format is not None:
                 self.lbl_output_format.setText(get_txt("lbl_output_format"))
+            if hasattr(self, "lbl_audio_speed") and self.lbl_audio_speed is not None:
+                self.lbl_audio_speed.setText(get_txt("lbl_audio_speed"))
 
             # 6. Các Feature Cards
             if hasattr(self, "card_merge") and self.card_merge is not None:
