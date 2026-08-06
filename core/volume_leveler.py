@@ -149,23 +149,16 @@ def _resolve_loudness_targets(options: VolumeLevelingOptions) -> Dict[str, float
 def get_pre_filter(preset: str) -> Optional[str]:
     """
     Return the pre-filter/compressor chain for the selected volume preset.
-    Only Strong/Aggressive presets apply dynamic dynamic range control.
+    Applies Dynamic Speech Leveling (dynaudnorm) to equalize volume drops in AI voice (e.g. ElevenLabs).
     """
     preset_lower = validate_preset(preset)
     if preset_lower == "natural":
-        return None
+        return "dynaudnorm=f=250:g=15:p=0.95:m=30:b=1:s=0"
     elif preset_lower == "strong":
-        # Monotonic downward-only compand: preserves noise/breath floor below -30 dBFS
-        return (
-            "compand="
-            "attacks=0.02:decays=0.25:"
-            "points=-80/-80|-30/-30|-20/-20|-10/-16|0/-12:"
-            "soft-knee=6"
-        )
+        return "dynaudnorm=f=350:g=21:p=0.95:m=30:b=1:s=0"
     elif preset_lower == "aggressive":
-        # Fast dynaudnorm for MMO / short-form content
-        return "dynaudnorm=f=150:g=15:p=0.95:m=10"
-    return None
+        return "dynaudnorm=f=250:g=15:p=0.95:m=30:b=1:s=0"
+    return "dynaudnorm=f=250:g=15:p=0.95:m=30:b=1:s=0"
 
 
 def _measure_loudness(
@@ -434,27 +427,34 @@ def apply_delivery_limiter(
 
 
 def _level_voice_only(input_path: Path, output_path: Path, options: VolumeLevelingOptions) -> Path:
-    """Normalise speech loudness while leaving breaths/background untouched."""
-    activity = _analyse_voice_activity(input_path)
+    """Normalise speech loudness while dynamically equalizing volume drops (e.g. ElevenLabs AI voice)."""
     targets = _resolve_loudness_targets(options)
 
     with tempfile.TemporaryDirectory(prefix="audio_factory_voice_level_") as temp_dir:
         temp_root = Path(temp_dir)
+        dyn_leveled = temp_root / "dyn_leveled.wav"
+        
+        # Step 1: Dynamic speech leveling (equalizes volume drops in quiet sections up to +30dB)
+        run_ffmpeg([
+            "-y", "-i", str(input_path),
+            "-af", "dynaudnorm=f=250:g=15:p=0.95:m=30:b=1:s=0",
+            "-ar", "48000", "-c:a", "pcm_f32le", str(dyn_leveled)
+        ])
+
+        # Step 2: Voice activity analysis on dyn_leveled audio
+        activity = _analyse_voice_activity(dyn_leveled)
         speech_reference = temp_root / "speech_reference.wav"
-        speech_samples = _write_speech_reference(input_path, speech_reference, activity)
+        speech_samples = _write_speech_reference(dyn_leveled, speech_reference, activity)
 
         if speech_samples:
             measured = _measure_loudness(speech_reference, targets)
-            # ``target_offset`` is not reliable for short, low-LRA material
-            # (for example a single steady TTS phrase).  Speech-only leveling
-            # needs the direct integrated-loudness difference instead.
             gain_db = (targets["lufs"] - float(measured["measured_I"])) if measured else 0.0
             gain_db = max(-_VOICE_MAX_GAIN_DB, min(_VOICE_MAX_GAIN_DB, gain_db))
         else:
             gain_db = 0.0
 
         gain_applied = temp_root / "voice_gain_applied.wav"
-        _apply_voice_gain(input_path, gain_applied, activity, gain_db)
+        _apply_voice_gain(dyn_leveled, gain_applied, activity, gain_db)
         return _render_limiter(gain_applied, output_path, options.overwrite, targets["limiter"])
 
 
